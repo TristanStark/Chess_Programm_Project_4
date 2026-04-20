@@ -37,3 +37,10 @@ class Round:
     matches: List[Match]
     start_date: datetime
     end_date: datetime
+    status: str = "not_started"
+
+    def __post_init__(self) -> None:
+        normalized = str(self.status).strip().lower()
+        if normalized not in {"not_started", "ongoing", "finished"}:
+            normalized = "not_started"
+        self.status = normalized

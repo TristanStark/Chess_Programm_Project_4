@@ -8,7 +8,13 @@ class PairingGenerator:
     def __init__(self, player_list: List[Player]):
         self.player_list: List[Player] = player_list
         self.seen_matches: Dict[Tuple[str, str], int] = {}
+        self.player_points: Dict[str, float] = {}
         self.current_round: int = 0
+        self._refresh_player_points()
+
+    def set_players(self, player_list: List[Player]) -> None:
+        self.player_list = player_list
+        self._refresh_player_points()
 
     @staticmethod
     def _normalize_match_key(player_1_ncid: str, player_2_ncid: str) -> Tuple[str, str]:
@@ -38,6 +44,12 @@ class PairingGenerator:
 
         return points
 
+    def _refresh_player_points(self) -> None:
+        self.player_points = {
+            player.national_chess_identifier: self._player_points(player)
+            for player in self.player_list
+        }
+
     def _hydrate_seen_matches_from_history(self) -> None:
         """
         Rebuild already-played matches from players history so rematch prevention
@@ -51,6 +63,26 @@ class PairingGenerator:
                     continue
                 key = self._normalize_match_key(player_ncid, opponent)
                 self.seen_matches[key] = 1
+
+    def update_after_match(
+        self,
+        player_1_ncid: str,
+        player_2_ncid: str,
+        result: str,
+    ) -> None:
+        normalized_result = str(result).strip().lower()
+        if normalized_result not in {"player1", "player2", "tie"}:
+            return
+
+        self.player_points.setdefault(player_1_ncid, 0.0)
+        self.player_points.setdefault(player_2_ncid, 0.0)
+        if normalized_result == "player1":
+            self.player_points[player_1_ncid] += 1.0
+        elif normalized_result == "player2":
+            self.player_points[player_2_ncid] += 1.0
+        else:
+            self.player_points[player_1_ncid] += 0.5
+            self.player_points[player_2_ncid] += 0.5
 
     def generate_random_pairings(self) -> List[Tuple[str, str]]:
         """Generate random pairings for the first round."""
@@ -87,11 +119,9 @@ class PairingGenerator:
             return self.generate_random_pairings()
 
         self._hydrate_seen_matches_from_history()
+        self._refresh_player_points()
 
-        points_by_player: Dict[str, float] = {
-            player.national_chess_identifier: self._player_points(player)
-            for player in self.player_list
-        }
+        points_by_player: Dict[str, float] = dict(self.player_points)
 
         grouped_players: Dict[float, List[Player]] = {}
         for player in self.player_list:

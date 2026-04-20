@@ -65,6 +65,22 @@ class MatchController:
             return False
         return self.set_match_status(index, "ongoing")
 
+    def can_change_match(
+        self,
+        tournament: Tournament | None,
+        round_index: int | None,
+    ) -> tuple[bool, str]:
+        if tournament is None:
+            return False, "No active tournament."
+        if not self._is_tournament_ongoing(tournament):
+            return False, "Tournament must be ongoing."
+        round_ = self._get_round_by_index(tournament, round_index)
+        if round_ is None:
+            return False, "No active round selected."
+        if round_.status != "ongoing":
+            return False, "Round must be ongoing."
+        return True, ""
+
     def finish_match(
         self,
         index: int,
@@ -100,7 +116,6 @@ class MatchController:
 
         self._append_match_history(index, match, winner, round_)
         self.set_match_status(index, "finished")
-        self._refresh_tournament_status(tournament)
         return True
 
     def _append_match_history(
@@ -139,23 +154,6 @@ class MatchController:
         )
 
     @staticmethod
-    def _refresh_tournament_status(tournament: Tournament | None) -> None:
-        if tournament is None:
-            return
-
-        all_matches = [
-            match for round_ in tournament.rounds for match in getattr(round_, "matches", [])
-        ]
-        if not all_matches:
-            return
-
-        if any(match.status in {"ongoing", "finished"} for match in all_matches):
-            tournament.status = "Ongoing"
-            return
-
-        tournament.status = "Preparation"
-
-    @staticmethod
     def _format_player_name(player) -> str:
         first_name = getattr(player, "first_name", "")
         last_name = getattr(player, "last_name", "")
@@ -180,3 +178,17 @@ class MatchController:
         if normalized not in {"not_started", "ongoing", "finished"}:
             return "not_started"
         return normalized
+
+    @staticmethod
+    def _is_tournament_ongoing(tournament: Tournament | None) -> bool:
+        if tournament is None:
+            return False
+        return str(getattr(tournament, "status", "")).strip().lower() == "ongoing"
+
+    @staticmethod
+    def _get_round_by_index(tournament: Tournament | None, round_index: int | None):
+        if tournament is None or round_index is None:
+            return None
+        if not 0 <= round_index < len(tournament.rounds):
+            return None
+        return tournament.rounds[round_index]

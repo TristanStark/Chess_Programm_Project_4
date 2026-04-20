@@ -69,6 +69,9 @@ class TournamentInfoPanel(CtkLabelFrame):
             player_name = self._format_player_name(player)
             self.players_tree.insert("", "end", text=player_name)
 
+        players_count = len(players)
+        self.players_title_label.configure(text=f"Players ({players_count}):")
+
     def _set_info_value(self, key, value):
         self._info_value_labels[key].configure(text=str(value))
 
@@ -101,13 +104,14 @@ class TournamentInfoPanel(CtkLabelFrame):
         players_frame.grid_rowconfigure(1, weight=1)
         players_frame.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(
+        self.players_title_label = ctk.CTkLabel(
             players_frame,
-            text="Players:",
+            text="Players (0):",
             anchor="w",
             text_color="black",
             font=ctk.CTkFont(size=16),
-        ).grid(row=0, column=0, sticky="w", pady=(0, 4))
+        )
+        self.players_title_label.grid(row=0, column=0, sticky="w", pady=(0, 4))
 
         tree_container = ctk.CTkFrame(players_frame, fg_color="transparent")
         tree_container.grid(row=1, column=0, sticky="nsew")

@@ -62,7 +62,18 @@ class TournamentRoundsPanel(CtkLabelFrame):
         self._round_statuses[index] = self._normalize_status(status)
         self._apply_row_style(index)
 
+    def select_round(self, index):
+        if not 0 <= index < len(self._round_item_ids):
+            self.rounds_tree.selection_remove(self.rounds_tree.selection())
+            return
+
+        item_id = self._round_item_ids[index]
+        self.rounds_tree.selection_set(item_id)
+        self.rounds_tree.focus(item_id)
+        self.rounds_tree.see(item_id)
+
     def _handle_tree_selection(self, _event):
+        """Select the round"""
         if self._on_round_selected is None:
             return
         selection = self.rounds_tree.selection()
@@ -75,6 +86,7 @@ class TournamentRoundsPanel(CtkLabelFrame):
         self._on_round_selected(selected_index)
 
     def _apply_row_style(self, index):
+        """Apply the correct color scheme"""
         if not 0 <= index < len(self._round_item_ids):
             return
 

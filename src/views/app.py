@@ -1,5 +1,4 @@
 import customtkinter as ctk
-from datetime import datetime
 from pathlib import Path
 import re
 from tkinter import filedialog, messagebox
@@ -8,7 +7,6 @@ from src.controllers.player_controller import PlayerController
 from src.controllers.players_controller import PlayersController
 from src.controllers.round_controller import RoundController
 from src.controllers.tournament_controller import TournamentController
-from src.models.matches import Match, Round, Score
 from src.models.players import Player
 from src.models.tournaments import Tournament
 from src.views.player_info_card_view import CreatePlayerPopup, PlayerInfoCard
@@ -24,14 +22,19 @@ class TournamentView(ctk.CTkFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, corner_radius=0, fg_color="#EDEDED", **kwargs)
         self.current_tournament = None
+        self.current_tournament_file_path = None
         self._selected_round_index = None
         self._selected_match_index = None
         self._active_round_index_for_matches = None
-        self._round_statuses = []
         self.players_controller = PlayersController(Path("data") / "players")
         self.create_player_popup = None
         self.create_tournament_popup = None
         self.match_result_popup = None
+        self._button_disabled_reasons = {}
+        self._tooltip_window = None
+        self._tooltip_label = None
+        self._tooltip_anchor_button = None
+        self._tooltip_after_id = None
 
         self._build_ui()
 
@@ -199,112 +202,49 @@ class TournamentView(ctk.CTkFrame):
         for col in range(8):
             self.actions_frame.grid_columnconfigure(col, weight=1)
         self._build_action_buttons()
-
-        # Sample model data to demonstrate MVC wiring.
-        caruana = Player("Fabiano", "Caruana", "1992-07-30", "US12345")
-        nakamura = Player("Hikaru", "Nakamura", "1987-12-09", "US23456")
-        firouzja = Player("Alireza", "Firouzja", "2003-06-18", "FR34567")
-        ding = Player("Ding", "Liren", "1992-10-24", "CN45678")
-        nepo = Player("Ian", "Nepomniachtchi", "1990-07-14", "RU56789")
-        giri = Player("Anish", "Giri", "1994-06-28", "NL67890")
-
-        qualifiers_matches = [
-            Match(player1=Score(caruana, 1.0), player2=Score(nakamura, 0.0)),
-            Match(player1=Score(firouzja, 0.5), player2=Score(ding, 0.5)),
-        ]
-        semifinal_matches = [
-            Match(player1=Score(nepo, 0.0), player2=Score(giri, 1.0)),
-        ]
-        final_matches = [
-            Match(player1=Score(caruana, 0.5), player2=Score(giri, 0.5)),
-        ]
-
-        sample_rounds = [
-            Round(
-                name="Qualifiers",
-                matches=qualifiers_matches,
-                start_date=datetime(2026, 5, 1, 9, 0),
-                end_date=datetime(2026, 5, 2, 18, 0),
-            ),
-            Round(
-                name="Semi-finals",
-                matches=semifinal_matches,
-                start_date=datetime(2026, 5, 3, 9, 0),
-                end_date=datetime(2026, 5, 3, 18, 0),
-            ),
-            Round(
-                name="Final",
-                matches=final_matches,
-                start_date=datetime(2026, 5, 4, 14, 0),
-                end_date=datetime(2026, 5, 4, 17, 0),
-            ),
-        ]
-
-        sample_tournament = Tournament(
-            name="Grand Masters Open",
-            venue="Paris",
-            start_date=datetime(2026, 5, 1, 9, 0),
-            end_date=datetime(2026, 5, 4, 17, 0),
-            description=(
-                "International invitational event.\n"
-                "Rapid tiebreaks are scheduled in case of equal points."
-            ),
-            players=[caruana, nakamura, firouzja, ding, nepo, giri],
-            rounds=sample_rounds,
-            number_of_rounds=4,
-        )
-        sample_tournament.status = "Preparation"
-
-        self.current_tournament = sample_tournament
-        self.tournament_controller.populate_view(self.current_tournament)
-        self._initialize_runtime_statuses(self.current_tournament)
-        if self.current_tournament.rounds:
-            self._active_round_index_for_matches = len(self.current_tournament.rounds) - 1
-            self.match_controller.populate_from_round(
-                self.current_tournament.rounds[self._active_round_index_for_matches]
-            )
+        self._register_global_tooltip_guards()
         self._refresh_action_buttons_visibility()
 
     def _build_action_buttons(self):
         self.save_tournament_button = ctk.CTkButton(
             self.actions_frame,
             text="Save tournament",
-            command=self._on_save_tournament,
+            command=lambda: self._run_action_with_autosave(self._on_save_tournament),
         )
         self.load_tournament_button = ctk.CTkButton(
             self.actions_frame,
             text="Load tournament",
-            command=self._on_load_tournament,
+            command=lambda: self._run_action_with_autosave(self._on_load_tournament),
         )
         self.export_button = ctk.CTkButton(
             self.actions_frame,
             text="Export",
-            command=self._on_export_tournament,
+            command=lambda: self._run_action_with_autosave(self._on_export_tournament),
         )
         self.start_tournament_button = ctk.CTkButton(
             self.actions_frame,
             text="Start tournament",
-            command=self._on_start_tournament,
+            command=lambda: self._run_action_with_autosave(self._on_start_tournament),
         )
         self.stop_tournament_button = ctk.CTkButton(
             self.actions_frame,
             text="Stop tournament",
-            command=self._on_stop_tournament,
+            command=lambda: self._run_action_with_autosave(self._on_stop_tournament),
         )
         self.match_action_button = ctk.CTkButton(
             self.actions_frame,
             text="Start match",
-            command=self._on_match_action_button,
+            command=lambda: self._run_action_with_autosave(self._on_match_action_button),
         )
         self.start_round_button = ctk.CTkButton(
             self.actions_frame,
             text="Start round",
-            command=self._on_start_round,
+            command=lambda: self._run_action_with_autosave(self._on_start_round),
         )
         self.stop_round_button = ctk.CTkButton(
             self.actions_frame,
             text="Stop round",
-            command=self._on_stop_round,
+            command=lambda: self._run_action_with_autosave(self._on_stop_round),
         )
 
         self._action_buttons = [
@@ -323,72 +263,153 @@ class TournamentView(ctk.CTkFrame):
         self.create_tournament_button = ctk.CTkButton(
             self.actions_frame,
             text="Create a tournament",
-            command=self._on_create_tournament,
+            command=lambda: self._run_action_with_autosave(self._on_create_tournament),
         )
         self.create_player_button = ctk.CTkButton(
             self.actions_frame,
             text="Create player",
-            command=self._on_create_player,
+            command=lambda: self._run_action_with_autosave(self._on_create_player),
         )
         self.add_player_to_tournament_button = ctk.CTkButton(
             self.actions_frame,
             text="Add player to tournament",
-            command=self._on_add_player_to_tournament,
+            command=lambda: self._run_action_with_autosave(self._on_add_player_to_tournament),
+        )
+        self.remove_player_from_tournament_button = ctk.CTkButton(
+            self.actions_frame,
+            text="Remove player from tournament",
+            command=lambda: self._run_action_with_autosave(self._on_remove_player_from_tournament),
         )
         self.create_tournament_button.grid(
-            row=1, column=0, columnspan=3, padx=4, pady=(6, 2), sticky="ew"
+            row=1, column=0, columnspan=2, padx=4, pady=(6, 2), sticky="ew"
         )
         self.create_player_button.grid(
-            row=1, column=3, columnspan=2, padx=4, pady=(6, 2), sticky="ew"
+            row=1, column=2, columnspan=2, padx=4, pady=(6, 2), sticky="ew"
         )
         self.add_player_to_tournament_button.grid(
-            row=1, column=5, columnspan=3, padx=4, pady=(6, 2), sticky="ew"
+            row=1, column=4, columnspan=2, padx=4, pady=(6, 2), sticky="ew"
+        )
+        self.remove_player_from_tournament_button.grid(
+            row=1, column=6, columnspan=2, padx=4, pady=(6, 2), sticky="ew"
+        )
+
+        action_buttons_for_tooltips = [
+            self.start_tournament_button,
+            self.stop_tournament_button,
+            self.match_action_button,
+            self.start_round_button,
+            self.stop_round_button,
+            self.create_tournament_button,
+            self.create_player_button,
+            self.add_player_to_tournament_button,
+            self.remove_player_from_tournament_button,
+        ]
+        for button in action_buttons_for_tooltips:
+            self._register_action_tooltip(button)
+
+        self.left_panel.players_tree.bind(
+            "<<TreeviewSelect>>",
+            lambda _event: self._refresh_action_buttons_visibility(),
+            add="+",
         )
 
     def _refresh_action_buttons_visibility(self):
+        self._hide_action_tooltip()
         self._sync_round_status_colors()
-        tournament_status = ""
-        if self.current_tournament is not None:
-            tournament_status = str(getattr(self.current_tournament, "status", "")).lower()
-
-        selected_round_status = self._get_selected_round_status()
-        active_round_status = self._get_active_round_status()
-        match_status = self._get_selected_match_status()
-        tournament_is_ongoing = tournament_status == "ongoing"
+        has_active_tournament = self.current_tournament is not None
         selected_round_index = self._selected_round_index
+        active_round_index = self._get_active_round_index()
+        match_status = self._get_selected_match_status()
 
-        selected_round_matches_finished = False
-        if selected_round_index is not None:
-            selected_round_matches_finished = self._are_all_matches_finished_in_round(
-                selected_round_index
-            )
-        previous_rounds_finished = self._are_previous_rounds_finished(selected_round_index)
-        all_rounds_finished = self._are_all_rounds_finished()
+        can_start_tournament, start_tournament_reason = self.tournament_controller.can_start_tournament(
+            self.current_tournament
+        )
+        can_stop_tournament, stop_tournament_reason = self.tournament_controller.can_stop_tournament(
+            self.current_tournament
+        )
+        can_start_round, start_round_reason = self.round_controller.can_start_round(
+            self.current_tournament,
+            selected_round_index,
+        )
+        can_stop_round, stop_round_reason = self.round_controller.can_stop_round(
+            self.current_tournament,
+            selected_round_index,
+        )
+        can_change_match, change_match_reason = self.match_controller.can_change_match(
+            self.current_tournament,
+            active_round_index,
+        )
+        can_create_tournament, create_tournament_reason = self.tournament_controller.can_create_tournament(
+            self.current_tournament
+        )
+        can_create_player, create_player_reason = self.players_controller.can_create_player(
+            self.current_tournament
+        )
+        can_add_player, add_player_reason = self.players_controller.can_add_player_to_tournament(
+            self.current_tournament
+        )
+        can_remove_player, remove_player_reason = self.players_controller.can_remove_player_from_tournament(
+            self.current_tournament,
+            self._get_selected_tournament_player(),
+        )
 
         self._set_button_enabled(
-            self.start_tournament_button, tournament_status == "preparation"
+            self.start_tournament_button,
+            can_start_tournament,
+            disabled_reason=start_tournament_reason,
         )
         self._set_button_enabled(
             self.stop_tournament_button,
-            tournament_is_ongoing and all_rounds_finished,
+            can_stop_tournament,
+            disabled_reason=stop_tournament_reason,
         )
 
         self._set_match_action_button(
             match_status=match_status,
-            can_change_match=tournament_is_ongoing and active_round_status == "ongoing",
+            can_change_match=can_change_match,
+            disabled_reason=change_match_reason,
         )
         self._set_button_enabled(
             self.start_round_button,
-            tournament_is_ongoing
-            and selected_round_status == "not_started"
-            and previous_rounds_finished,
+            can_start_round,
+            disabled_reason=start_round_reason,
         )
         self._set_button_enabled(
             self.stop_round_button,
-            tournament_is_ongoing
-            and selected_round_status == "ongoing"
-            and selected_round_matches_finished,
+            can_stop_round,
+            disabled_reason=stop_round_reason,
         )
+        self._set_button_enabled(
+            self.create_tournament_button,
+            can_create_tournament,
+            disabled_reason=create_tournament_reason,
+        )
+        self._set_button_enabled(
+            self.create_player_button,
+            can_create_player,
+            disabled_reason=create_player_reason,
+        )
+        self._set_button_enabled(
+            self.add_player_to_tournament_button,
+            can_add_player,
+            disabled_reason=add_player_reason,
+        )
+        self._set_button_enabled(
+            self.remove_player_from_tournament_button,
+            can_remove_player,
+            disabled_reason=remove_player_reason,
+        )
+        self._set_button_visibility(
+            self.add_player_to_tournament_button,
+            has_active_tournament,
+        )
+        self._set_button_visibility(
+            self.remove_player_from_tournament_button,
+            has_active_tournament,
+        )
+        if not has_active_tournament:
+            self._button_disabled_reasons[self.add_player_to_tournament_button] = ""
+            self._button_disabled_reasons[self.remove_player_from_tournament_button] = ""
 
     @staticmethod
     def _set_button_visibility(button, should_show):
@@ -397,63 +418,276 @@ class TournamentView(ctk.CTkFrame):
         else:
             button.grid_remove()
 
-    @staticmethod
-    def _set_button_enabled(button, enabled):
+    def _set_button_enabled(self, button, enabled, disabled_reason: str = ""):
         button.configure(state=("normal" if enabled else "disabled"))
+        if enabled:
+            self._button_disabled_reasons[button] = ""
+        else:
+            self._button_disabled_reasons[button] = disabled_reason or "Action unavailable."
 
-    def _set_match_action_button(self, match_status, can_change_match: bool):
+    def _set_match_action_button(
+        self,
+        match_status,
+        can_change_match: bool,
+        disabled_reason: str = "",
+    ):
         if match_status == "not_started":
             self.match_action_button.configure(
-                text="Start match", command=self._on_start_match
+                text="Start match",
+                command=lambda: self._run_action_with_autosave(self._on_start_match),
             )
             self._set_button_visibility(self.match_action_button, True)
-            self._set_button_enabled(self.match_action_button, can_change_match)
+            self._set_button_enabled(
+                self.match_action_button,
+                can_change_match,
+                disabled_reason=disabled_reason,
+            )
             return
 
         if match_status == "ongoing":
             self.match_action_button.configure(
-                text="End match", command=self._on_end_match
+                text="End match",
+                command=lambda: self._run_action_with_autosave(self._on_end_match),
             )
             self._set_button_visibility(self.match_action_button, True)
-            self._set_button_enabled(self.match_action_button, can_change_match)
+            self._set_button_enabled(
+                self.match_action_button,
+                can_change_match,
+                disabled_reason=disabled_reason,
+            )
             return
 
         self._set_button_visibility(self.match_action_button, False)
+        self._button_disabled_reasons[self.match_action_button] = ""
+
+    def _register_action_tooltip(self, button):
+        button.bind("<Enter>", lambda event, btn=button: self._on_action_button_enter(event, btn), add="+")
+        button.bind("<Motion>", lambda event: self._on_action_button_motion(event), add="+")
+        button.bind("<Leave>", lambda _event: self._hide_action_tooltip(), add="+")
+        button.bind("<ButtonPress-1>", lambda _event: self._hide_action_tooltip(), add="+")
+
+    def _register_global_tooltip_guards(self):
+        root = self.winfo_toplevel()
+        root.bind("<Motion>", lambda _event: self._guard_active_tooltip(), add="+")
+        root.bind("<ButtonPress>", lambda _event: self._hide_action_tooltip(), add="+")
+        root.bind("<Configure>", lambda _event: self._guard_active_tooltip(), add="+")
+        root.bind("<FocusOut>", lambda _event: self._hide_action_tooltip(), add="+")
+
+    def _guard_active_tooltip(self):
+        if self._tooltip_window is None or not self._tooltip_window.winfo_exists():
+            return
+
+        button = self._tooltip_anchor_button
+        if button is None or not button.winfo_exists() or not button.winfo_ismapped():
+            self._hide_action_tooltip()
+            return
+
+        if str(button.cget("state")).strip().lower() != "disabled":
+            self._hide_action_tooltip()
+            return
+
+        if not self._is_pointer_over_widget(button):
+            self._hide_action_tooltip()
+            return
+
+    def _on_action_button_enter(self, event, button):
+        if str(button.cget("state")).strip().lower() != "disabled":
+            self._hide_action_tooltip()
+            return
+
+        reason = self._button_disabled_reasons.get(button, "").strip()
+        if not reason:
+            self._hide_action_tooltip()
+            return
+
+        self._show_action_tooltip(
+            event.x_root + 14,
+            event.y_root + 14,
+            reason,
+            anchor_button=button,
+        )
+
+    def _on_action_button_motion(self, event):
+        if self._tooltip_window is None or not self._tooltip_window.winfo_exists():
+            return
+        if self._tooltip_anchor_button is not None and event.widget != self._tooltip_anchor_button:
+            self._hide_action_tooltip()
+            return
+        self._tooltip_window.geometry(f"+{event.x_root + 14}+{event.y_root + 14}")
+
+    def _show_action_tooltip(self, x, y, text, anchor_button=None):
+        self._hide_action_tooltip()
+        self._tooltip_anchor_button = anchor_button
+        self._tooltip_window = ctk.CTkToplevel(self.winfo_toplevel())
+        self._tooltip_window.overrideredirect(True)
+        self._tooltip_window.attributes("-topmost", True)
+        self._tooltip_window.geometry(f"+{x}+{y}")
+        self._tooltip_label = ctk.CTkLabel(
+            self._tooltip_window,
+            text=text,
+            fg_color="#FDF6E3",
+            text_color="black",
+            corner_radius=6,
+            padx=10,
+            pady=6,
+            justify="left",
+            wraplength=360,
+        )
+        self._tooltip_label.pack()
+        self._schedule_tooltip_hover_check()
+
+    def _schedule_tooltip_hover_check(self):
+        if self._tooltip_after_id is not None:
+            try:
+                self.after_cancel(self._tooltip_after_id)
+            except Exception:
+                pass
+            self._tooltip_after_id = None
+
+        self._tooltip_after_id = self.after(120, self._check_tooltip_hover)
+
+    def _check_tooltip_hover(self):
+        self._tooltip_after_id = None
+        button = self._tooltip_anchor_button
+        if button is None or not button.winfo_exists() or not button.winfo_ismapped():
+            self._hide_action_tooltip()
+            return
+
+        if str(button.cget("state")).strip().lower() != "disabled":
+            self._hide_action_tooltip()
+            return
+
+        if not self._is_pointer_over_widget(button):
+            self._hide_action_tooltip()
+            return
+
+        self._schedule_tooltip_hover_check()
+
+    def _is_pointer_over_widget(self, target_widget) -> bool:
+        pointer_x, pointer_y = self.winfo_pointerxy()
+        hovered_widget = self.winfo_containing(pointer_x, pointer_y)
+        while hovered_widget is not None:
+            if hovered_widget == target_widget:
+                return True
+            hovered_widget = hovered_widget.master
+        return False
+
+    def _hide_action_tooltip(self):
+        if self._tooltip_after_id is not None:
+            try:
+                self.after_cancel(self._tooltip_after_id)
+            except Exception:
+                pass
+            self._tooltip_after_id = None
+
+        if self._tooltip_window is not None and self._tooltip_window.winfo_exists():
+            self._tooltip_window.destroy()
+        self._tooltip_window = None
+        self._tooltip_label = None
+        self._tooltip_anchor_button = None
 
     def _initialize_runtime_statuses(self, tournament: Tournament):
         self._selected_round_index = None
         self._selected_match_index = None
-        self._round_statuses = []
+        self.tournament_controller.initialize_runtime_state(tournament)
 
-        for round_ in tournament.rounds:
-            round_status = self._infer_round_status(round_)
-            self._round_statuses.append(round_status)
-            if round_status == "finished":
-                default_match_status = "finished"
-            else:
-                default_match_status = "not_started"
+    def _set_active_tournament(
+        self,
+        tournament: Tournament | None,
+        file_path: Path | None = None,
+    ):
+        self.current_tournament = tournament
+        self.current_tournament_file_path = file_path
+        self._selected_round_index = None
+        self._selected_match_index = None
+        self._active_round_index_for_matches = None
 
-            for match in round_.matches:
-                normalized_match_status = str(getattr(match, "status", "")).strip().lower()
-                if normalized_match_status not in {"not_started", "ongoing", "finished"}:
-                    normalized_match_status = default_match_status
-                match.status = normalized_match_status
+        if self.current_tournament is None:
+            self.match_controller.populate_view([])
+            self.player_1_controller.select_player(None)
+            self.player_2_controller.select_player(None)
+            self._refresh_action_buttons_visibility()
+            return
 
-    @staticmethod
-    def _infer_round_status(round_):
-        now = datetime.now()
-        if isinstance(round_.end_date, datetime) and now > round_.end_date:
-            return "finished"
-        if isinstance(round_.start_date, datetime) and now < round_.start_date:
-            return "not_started"
-        return "ongoing"
+        self._initialize_runtime_statuses(self.current_tournament)
+        self.tournament_controller.populate_view(self.current_tournament)
+        if self.current_tournament.rounds:
+            self._active_round_index_for_matches = len(self.current_tournament.rounds) - 1
+            self.match_controller.populate_from_round(
+                self.current_tournament.rounds[self._active_round_index_for_matches]
+            )
+        else:
+            self.match_controller.populate_view([])
+        self.player_1_controller.select_player(None)
+        self.player_2_controller.select_player(None)
+        self._refresh_action_buttons_visibility()
 
-    def _get_selected_round_status(self):
-        if self._selected_round_index is None:
+    def _save_tournament(
+        self,
+        *,
+        prompt_path_if_missing: bool,
+        show_success_message: bool,
+    ) -> bool:
+        if self.current_tournament is None:
+            messagebox.showerror("Tournament", "No active tournament.")
+            return False
+
+        target_file_path = self.current_tournament_file_path
+        if target_file_path is None and prompt_path_if_missing:
+            selected_path = filedialog.asksaveasfilename(
+                title="Save tournament JSON file",
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                initialdir=str(self.tournament_controller.tournaments_directory),
+            )
+            if not selected_path:
+                return False
+            target_file_path = Path(selected_path)
+
+        success, message, saved_path = self.tournament_controller.save_tournament_to_json(
+            self.current_tournament,
+            target_file_path,
+        )
+        if not success:
+            messagebox.showerror("Tournament", message)
+            return False
+
+        self.current_tournament_file_path = saved_path
+        if show_success_message:
+            messagebox.showinfo("Tournament", message)
+        return True
+
+    def _run_action_with_autosave(self, action) -> None:
+        try:
+            action()
+        finally:
+            self._autosave_tournament()
+
+    def _autosave_tournament(self):
+        if self.current_tournament is None or self.current_tournament_file_path is None:
+            return
+        self._save_tournament(
+            prompt_path_if_missing=False,
+            show_success_message=False,
+        )
+
+    def _get_selected_tournament_player(self):
+        if self.current_tournament is None:
             return None
-        if 0 <= self._selected_round_index < len(self._round_statuses):
-            return self._round_statuses[self._selected_round_index]
-        return None
+
+        selection = self.left_panel.players_tree.selection()
+        if not selection:
+            return None
+
+        selected_item_id = selection[0]
+        all_items = self.left_panel.players_tree.get_children("")
+        if selected_item_id not in all_items:
+            return None
+
+        selected_index = all_items.index(selected_item_id)
+        if not 0 <= selected_index < len(self.current_tournament.players):
+            return None
+        return self.current_tournament.players[selected_index]
 
     def _get_selected_match_status(self):
         if self._selected_match_index is None:
@@ -462,14 +696,6 @@ class TournamentView(ctk.CTkFrame):
         if match is None:
             return None
         return str(getattr(match, "status", "")).strip().lower()
-
-    def _get_active_round_status(self):
-        active_round_index = self._get_active_round_index()
-        if active_round_index is None:
-            return None
-        if 0 <= active_round_index < len(self._round_statuses):
-            return self._round_statuses[active_round_index]
-        return None
 
     def _on_round_selected(self, selected_round_index):
         self._selected_round_index = selected_round_index
@@ -493,15 +719,42 @@ class TournamentView(ctk.CTkFrame):
         self._refresh_action_buttons_visibility()
 
     def _on_save_tournament(self):
-        print("Save tournament clicked")
+        self._save_tournament(
+            prompt_path_if_missing=True,
+            show_success_message=False,
+        )
 
     def _on_load_tournament(self):
-        print("Load tournament clicked")
+        selected_path = filedialog.askopenfilename(
+            title="Select tournament JSON file",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            initialdir=str(self.tournament_controller.tournaments_directory),
+        )
+        if not selected_path:
+            return
+
+        file_path = Path(selected_path)
+        success, message, tournament = self.tournament_controller.load_tournament_from_json(file_path)
+        if not success:
+            messagebox.showerror("Tournament", message)
+            return
+
+        self._set_active_tournament(tournament, file_path=file_path)
 
     def _on_export_tournament(self):
         print("Export tournament clicked")
 
     def _on_create_tournament(self):
+        can_create, reason = self.tournament_controller.can_create_tournament(
+            self.current_tournament
+        )
+        if not can_create:
+            messagebox.showerror(
+                "Tournament",
+                reason,
+            )
+            return
+
         if (
             self.create_tournament_popup is not None
             and self.create_tournament_popup.winfo_exists()
@@ -516,6 +769,16 @@ class TournamentView(ctk.CTkFrame):
         )
 
     def _on_create_player(self):
+        can_create, reason = self.players_controller.can_create_player(
+            self.current_tournament
+        )
+        if not can_create:
+            messagebox.showerror(
+                "Player",
+                reason,
+            )
+            return
+
         if self.create_player_popup is not None and self.create_player_popup.winfo_exists():
             self.create_player_popup.lift()
             self.create_player_popup.focus_force()
@@ -530,25 +793,76 @@ class TournamentView(ctk.CTkFrame):
         if self.current_tournament is None:
             messagebox.showerror("Tournament", "No active tournament.")
             return
+        can_add, reason = self.players_controller.can_add_player_to_tournament(
+            self.current_tournament
+        )
+        if not can_add:
+            messagebox.showerror(
+                "Tournament",
+                reason,
+            )
+            return
 
-        selected_path = filedialog.askopenfilename(
-            title="Select player JSON file",
+        selected_paths = filedialog.askopenfilenames(
+            title="Select player JSON files",
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
             initialdir=str(self.players_controller.players_directory),
         )
-        if not selected_path:
+        if not selected_paths:
             return
 
-        path_obj = Path(selected_path)
-        success, message = self.tournament_controller.add_player_to_tournament(
+        imported_count = 0
+        failed_imports = []
+
+        for selected_path in selected_paths:
+            path_obj = Path(selected_path)
+            success, message = self.tournament_controller.add_player_to_tournament(
+                self.current_tournament,
+                player_file_name=path_obj.name,
+                player_file_path=str(path_obj),
+            )
+            if success:
+                imported_count += 1
+            else:
+                failed_imports.append(f"{path_obj.name}: {message}")
+
+        if imported_count == 0:
+            messagebox.showerror("Players", "\n".join(failed_imports))
+            return
+
+        self._autosave_tournament()
+        self._refresh_action_buttons_visibility()
+
+        if failed_imports:
+            messagebox.showwarning(
+                "Players",
+                (
+                    f"Imported {imported_count} player(s).\n\n"
+                    "Some files failed:\n"
+                    + "\n".join(failed_imports)
+                ),
+            )
+
+    def _on_remove_player_from_tournament(self):
+        selected_player = self._get_selected_tournament_player()
+        can_remove, reason = self.players_controller.can_remove_player_from_tournament(
             self.current_tournament,
-            player_file_name=path_obj.name,
-            player_file_path=str(path_obj),
+            selected_player,
         )
-        if success:
-            messagebox.showinfo("Player", message)
-        else:
-            messagebox.showerror("Player", message)
+        if not can_remove:
+            messagebox.showerror("Players", reason)
+            return
+
+        success, message = self.tournament_controller.remove_player_from_tournament(
+            self.current_tournament,
+            selected_player,
+        )
+        if not success:
+            messagebox.showerror("Players", message)
+            return
+
+        self._autosave_tournament()
+        self._refresh_action_buttons_visibility()
 
     def _save_player_from_popup(self, player_data):
         first_name = player_data["first_name"]
@@ -574,21 +888,14 @@ class TournamentView(ctk.CTkFrame):
         return True, ""
 
     def _save_tournament_from_popup(self, tournament_data):
-        success, message, tournament = self.tournament_controller.create_and_save_tournament(
-            tournament_data
+        success, message, tournament, file_path = self.tournament_controller.create_and_save_tournament(
+            tournament_data,
+            current_tournament=self.current_tournament,
         )
         if not success:
             return False, message
 
-        self.current_tournament = tournament
-        self.tournament_controller.populate_view(self.current_tournament)
-        self._initialize_runtime_statuses(self.current_tournament)
-        self._active_round_index_for_matches = None
-        self._selected_round_index = None
-        self._selected_match_index = None
-        self.player_1_controller.select_player(None)
-        self.player_2_controller.select_player(None)
-        self._refresh_action_buttons_visibility()
+        self._set_active_tournament(tournament, file_path=file_path)
         return True, ""
 
     def _build_player_filename(self, player: Player):
@@ -605,62 +912,69 @@ class TournamentView(ctk.CTkFrame):
         return candidate
 
     def _on_start_tournament(self):
-        if self.current_tournament is None:
+        success, message = self.tournament_controller.start_tournament(self.current_tournament)
+        if not success:
+            messagebox.showerror("Tournament", message)
             return
-        if str(getattr(self.current_tournament, "status", "")).strip().lower() != "preparation":
-            return
-        self.current_tournament.status = "Ongoing"
-        self.tournament_controller.populate_view(
-            self.current_tournament,
-            populate_rounds=False,
-            populate_matches_from_current_round=False,
-        )
+
+        self._selected_round_index = None
+        self._selected_match_index = None
+        self._active_round_index_for_matches = 0 if self.current_tournament.rounds else None
+        self.tournament_controller.populate_view(self.current_tournament)
+        if self._active_round_index_for_matches is not None:
+            self.match_controller.populate_from_round(
+                self.current_tournament.rounds[self._active_round_index_for_matches]
+            )
+            self.rounds_panel.select_round(self._active_round_index_for_matches)
+        self.player_1_controller.select_player(None)
+        self.player_2_controller.select_player(None)
+        self._autosave_tournament()
         self._refresh_action_buttons_visibility()
 
     def _on_stop_tournament(self):
-        if self.current_tournament is None:
+        success, message = self.tournament_controller.stop_tournament(self.current_tournament)
+        if not success:
+            messagebox.showerror("Tournament", message)
             return
 
-        tournament_status = str(getattr(self.current_tournament, "status", "")).strip().lower()
-        if tournament_status != "ongoing":
-            return
-        if not self._are_all_rounds_finished():
-            return
-
-        self.current_tournament.status = "Completed"
         self.tournament_controller.populate_view(
             self.current_tournament,
             populate_rounds=False,
             populate_matches_from_current_round=False,
         )
+        self._autosave_tournament()
         self._refresh_action_buttons_visibility()
 
     def _on_start_round(self):
-        if self._selected_round_index is None:
+        success, message = self.round_controller.start_round(
+            self.current_tournament,
+            self._selected_round_index,
+        )
+        if not success:
+            messagebox.showerror("Round", message)
             return
-        tournament_status = str(getattr(self.current_tournament, "status", "")).strip().lower()
-        if tournament_status != "ongoing":
-            return
-        if self._get_selected_round_status() != "not_started":
-            return
-        if not self._are_previous_rounds_finished(self._selected_round_index):
-            return
-        if 0 <= self._selected_round_index < len(self._round_statuses):
-            self._round_statuses[self._selected_round_index] = "ongoing"
+
+        self.tournament_controller.update_tournament_status_from_matches(self.current_tournament)
+        self._autosave_tournament()
         self._refresh_action_buttons_visibility()
 
     def _on_stop_round(self):
-        if self._selected_round_index is None:
+        success, message = self.round_controller.stop_round(
+            self.current_tournament,
+            self._selected_round_index,
+            on_round_finished=self.tournament_controller.generate_next_round_if_possible,
+        )
+        if not success:
+            messagebox.showerror("Round", message)
             return
-        tournament_status = str(getattr(self.current_tournament, "status", "")).strip().lower()
-        if tournament_status != "ongoing":
-            return
-        if self._get_selected_round_status() != "ongoing":
-            return
-        if not self._are_all_matches_finished_in_round(self._selected_round_index):
-            return
-        if 0 <= self._selected_round_index < len(self._round_statuses):
-            self._round_statuses[self._selected_round_index] = "finished"
+
+        if self.current_tournament is not None:
+            self.tournament_controller.populate_view(
+                self.current_tournament,
+                populate_rounds=True,
+                populate_matches_from_current_round=False,
+            )
+        self._autosave_tournament()
         self._refresh_action_buttons_visibility()
 
     def _on_match_action_button(self):
@@ -673,35 +987,39 @@ class TournamentView(ctk.CTkFrame):
     def _on_start_match(self):
         if self._selected_match_index is None:
             return
-        tournament_status = str(getattr(self.current_tournament, "status", "")).strip().lower()
-        if tournament_status != "ongoing":
-            return
-        if self._get_active_round_status() != "ongoing":
+
+        active_round_index = self._get_active_round_index()
+        can_change_match, _ = self.match_controller.can_change_match(
+            self.current_tournament,
+            active_round_index,
+        )
+        if not can_change_match:
             return
 
         started = self.match_controller.start_match(self._selected_match_index)
         if not started:
             return
 
-        active_round_index = self._get_active_round_index()
-        if active_round_index is not None and 0 <= active_round_index < len(self._round_statuses):
-            self._round_statuses[active_round_index] = "ongoing"
-        self._refresh_tournament_status_from_matches()
+        self.tournament_controller.update_tournament_status_from_matches(self.current_tournament)
         if self.current_tournament is not None:
             self.tournament_controller.populate_view(
                 self.current_tournament,
                 populate_rounds=False,
                 populate_matches_from_current_round=False,
             )
+        self._autosave_tournament()
         self._refresh_action_buttons_visibility()
 
     def _on_end_match(self):
         if self._selected_match_index is None:
             return
-        tournament_status = str(getattr(self.current_tournament, "status", "")).strip().lower()
-        if tournament_status != "ongoing":
-            return
-        if self._get_active_round_status() != "ongoing":
+
+        active_round_index = self._get_active_round_index()
+        can_change_match, _ = self.match_controller.can_change_match(
+            self.current_tournament,
+            active_round_index,
+        )
+        if not can_change_match:
             return
 
         selected_match = self.match_controller.get_match_by_index(self._selected_match_index)
@@ -736,17 +1054,23 @@ class TournamentView(ctk.CTkFrame):
         ctk.CTkButton(
             buttons_container,
             text=player_1_name,
-            command=lambda: self._finalize_match_result("player1"),
+            command=lambda: self._run_action_with_autosave(
+                lambda: self._finalize_match_result("player1")
+            ),
         ).grid(row=0, column=0, padx=(0, 6), sticky="ew")
         ctk.CTkButton(
             buttons_container,
             text="Tie",
-            command=lambda: self._finalize_match_result("tie"),
+            command=lambda: self._run_action_with_autosave(
+                lambda: self._finalize_match_result("tie")
+            ),
         ).grid(row=0, column=1, padx=6, sticky="ew")
         ctk.CTkButton(
             buttons_container,
             text=player_2_name,
-            command=lambda: self._finalize_match_result("player2"),
+            command=lambda: self._run_action_with_autosave(
+                lambda: self._finalize_match_result("player2")
+            ),
         ).grid(row=0, column=2, padx=(6, 0), sticky="ew")
 
         self.match_result_popup.bind("<Escape>", lambda _event: self._close_match_result_popup())
@@ -758,6 +1082,10 @@ class TournamentView(ctk.CTkFrame):
 
         active_round_index = self._get_active_round_index()
         selected_round = self.round_controller.get_round_by_index(active_round_index)
+        selected_match = self.match_controller.get_match_by_index(self._selected_match_index)
+        rounds_count_before_sync = (
+            len(self.current_tournament.rounds) if self.current_tournament is not None else 0
+        )
 
         finished = self.match_controller.finish_match(
             self._selected_match_index,
@@ -769,52 +1097,45 @@ class TournamentView(ctk.CTkFrame):
         if not finished:
             return
 
-        self._refresh_round_status_from_matches()
-        self._refresh_tournament_status_from_matches()
+        self.tournament_controller.update_pairing_generator_after_match(
+            self.current_tournament,
+            selected_match,
+            result,
+        )
 
-        if selected_round is not None:
-            selected_index = self._selected_match_index
-            self.match_controller.populate_from_round(selected_round)
-            self.matches_panel.select_match(selected_index)
+        self.tournament_controller.sync_round_status_from_matches(
+            self.current_tournament,
+            active_round_index,
+        )
+        self.tournament_controller.update_tournament_status_from_matches(self.current_tournament)
 
         if self.current_tournament is not None:
             self.left_panel.set_players(self.current_tournament.players)
+            rounds_count_after_sync = len(self.current_tournament.rounds)
+            moved_to_next_round = rounds_count_after_sync > rounds_count_before_sync
+            target_round_index = active_round_index
+            if moved_to_next_round:
+                target_round_index = rounds_count_after_sync - 1
+                self._selected_match_index = None
+
             self.tournament_controller.populate_view(
                 self.current_tournament,
-                populate_rounds=False,
+                populate_rounds=True,
                 populate_matches_from_current_round=False,
             )
 
+            if target_round_index is not None:
+                self._active_round_index_for_matches = target_round_index
+                self.rounds_panel.select_round(target_round_index)
+                if (
+                    not moved_to_next_round
+                    and selected_round is not None
+                    and self._selected_match_index is not None
+                ):
+                    self.matches_panel.select_match(self._selected_match_index)
+
+        self._autosave_tournament()
         self._refresh_action_buttons_visibility()
-
-    def _refresh_round_status_from_matches(self):
-        active_round_index = self._get_active_round_index()
-        if active_round_index is None:
-            return
-        selected_round = self.round_controller.get_round_by_index(active_round_index)
-        if selected_round is None:
-            return
-
-        match_statuses = [match.status for match in selected_round.matches]
-        if match_statuses and all(status == "finished" for status in match_statuses):
-            self._round_statuses[active_round_index] = "finished"
-        elif any(status == "ongoing" for status in match_statuses):
-            self._round_statuses[active_round_index] = "ongoing"
-
-    def _refresh_tournament_status_from_matches(self):
-        if self.current_tournament is None:
-            return
-
-        all_matches = [
-            match for round_ in self.current_tournament.rounds for match in round_.matches
-        ]
-        if not all_matches:
-            return
-
-        if any(match.status in {"ongoing", "finished"} for match in all_matches):
-            self.current_tournament.status = "Ongoing"
-        else:
-            self.current_tournament.status = "Preparation"
 
     def _close_match_result_popup(self):
         if self.match_result_popup is not None and self.match_result_popup.winfo_exists():
@@ -828,34 +1149,10 @@ class TournamentView(ctk.CTkFrame):
         return self._active_round_index_for_matches
 
     def _sync_round_status_colors(self):
-        for index, round_status in enumerate(self._round_statuses):
-            self.round_controller.update_round_status(index, round_status)
-
-    def _are_all_matches_finished_in_round(self, round_index):
-        selected_round = self.round_controller.get_round_by_index(round_index)
-        if selected_round is None:
-            return False
-        if not selected_round.matches:
-            return False
-        return all(match.status == "finished" for match in selected_round.matches)
-
-    def _are_previous_rounds_finished(self, round_index):
-        if round_index is None:
-            return False
-        if round_index <= 0:
-            return True
-
-        for index in range(0, round_index):
-            if not (0 <= index < len(self._round_statuses)):
-                return False
-            if self._round_statuses[index] != "finished":
-                return False
-        return True
-
-    def _are_all_rounds_finished(self):
-        if not self._round_statuses:
-            return False
-        return all(round_status == "finished" for round_status in self._round_statuses)
+        if self.current_tournament is None:
+            return
+        for index, round_ in enumerate(self.current_tournament.rounds):
+            self.round_controller.update_round_status(index, round_.status)
 
     @staticmethod
     def _format_player_name(player):

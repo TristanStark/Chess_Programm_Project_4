@@ -1,6 +1,7 @@
 from pathlib import Path
 from src.models.players import Player
 from typing import List, Optional
+from src.models.tournaments import Tournament
 
 
 class PlayersController:
@@ -19,6 +20,39 @@ class PlayersController:
         self.players_directory = players_directory
         # Ensure the directory exists
         self.players_directory.mkdir(parents=True, exist_ok=True)
+
+    def can_create_player(
+        self,
+        current_tournament: Tournament | None,
+    ) -> tuple[bool, str]:
+        if self._is_tournament_ongoing(current_tournament):
+            return False, "Cannot create a player while tournament is ongoing."
+        return True, ""
+
+    def can_add_player_to_tournament(
+        self,
+        tournament: Tournament | None,
+    ) -> tuple[bool, str]:
+        if tournament is None:
+            return False, "No active tournament."
+        if self._is_tournament_ongoing(tournament):
+            return False, "Cannot add a player while tournament is ongoing."
+        return True, ""
+
+    def can_remove_player_from_tournament(
+        self,
+        tournament: Tournament | None,
+        player: Player | None,
+    ) -> tuple[bool, str]:
+        if tournament is None:
+            return False, "No active tournament."
+        if self._is_tournament_ongoing(tournament):
+            return False, "Cannot remove a player while tournament is ongoing."
+        if not tournament.players:
+            return False, "No player in the tournament."
+        if player is None:
+            return False, "No player selected."
+        return True, ""
 
     def create_player(self, first_name: str, last_name: str,
                       date_of_birth: str,
@@ -98,6 +132,12 @@ class PlayersController:
             if player:
                 players.append(player)
         return players
+
+    @staticmethod
+    def _is_tournament_ongoing(tournament: Tournament | None) -> bool:
+        if tournament is None:
+            return False
+        return str(getattr(tournament, "status", "")).strip().lower() == "ongoing"
 
 
 # Example usage (can be removed or moved to a dedicated test file)
