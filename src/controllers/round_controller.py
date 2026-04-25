@@ -3,6 +3,7 @@ from typing import Callable, Iterable
 
 from src.models.matches import Round
 from src.models.tournaments import Tournament
+from src.controllers.settings import debug_print
 from src.views.rounds_view import TournamentRoundsPanel
 
 
@@ -18,8 +19,9 @@ class RoundController:
         self.rounds_view.add_round_row(
             self._format_round_row(round_),
             status=round_.status,
+            match_status_summary=self._format_round_match_status_summary(round_),
         )
-        print(f"Adding round to view with status: {round_.status}")
+        debug_print(f"Adding round to view with status: {round_.status}")
 
     def populate_view(self, rounds: Iterable[Round], clear_before: bool = True) -> None:
         """Populate the rounds view from an iterable of Round model instances."""
@@ -61,7 +63,11 @@ class RoundController:
             return
 
         round_.status = self._normalize_status(status)
-        self.rounds_view.update_round_status(index, round_.status)
+        self.rounds_view.update_round_status(
+            index,
+            round_.status,
+            match_status_summary=self._format_round_match_status_summary(round_),
+        )
 
     def can_start_round(
         self,
@@ -161,6 +167,22 @@ class RoundController:
         start_text = self._format_datetime(round_.start_date)
         end_text = self._format_datetime(round_.end_date)
         return f"{round_.name} - {start_text} - {end_text}"
+
+    def _format_round_match_status_summary(self, round_: Round) -> str:
+        status_counts = {
+            "ongoing": 0,
+            "not_started": 0,
+            "finished": 0,
+        }
+        for match in getattr(round_, "matches", []):
+            normalized_status = self._normalize_status(getattr(match, "status", ""))
+            status_counts[normalized_status] += 1
+
+        return (
+            f"{status_counts['ongoing']} ongoing, "
+            f"{status_counts['not_started']} not started, "
+            f"{status_counts['finished']} finished"
+        )
 
     @staticmethod
     def _format_datetime(value) -> str:

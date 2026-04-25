@@ -15,6 +15,7 @@ class TournamentRoundsPanel(CtkLabelFrame):
         self._on_round_selected = None
         self._round_item_ids = []
         self._round_statuses = []
+        self._round_match_summaries = []
         self.content.grid_rowconfigure(1, weight=1)
         self.content.grid_columnconfigure(0, weight=1)
 
@@ -33,10 +34,16 @@ class TournamentRoundsPanel(CtkLabelFrame):
 
         self.rounds_tree = ttk.Treeview(
             rounds_tree_container,
-            columns=("round_name",),
-            show="tree",
+            columns=("status", "matches_status"),
+            show="tree headings",
             height=5,
         )
+        self.rounds_tree.heading("#0", text="Round")
+        self.rounds_tree.heading("status", text="Status")
+        self.rounds_tree.heading("matches_status", text="Matches")
+        self.rounds_tree.column("#0", anchor="w", stretch=True, width=300, minwidth=200)
+        self.rounds_tree.column("status", anchor="e", stretch=False, width=120, minwidth=100)
+        self.rounds_tree.column("matches_status", anchor="w", stretch=True, width=330, minwidth=260)
         self.rounds_tree.grid(row=0, column=0, sticky="nsew")
         self.rounds_tree.bind("<<TreeviewSelect>>", self._handle_tree_selection)
 
@@ -48,18 +55,40 @@ class TournamentRoundsPanel(CtkLabelFrame):
             self.rounds_tree.delete(item)
         self._round_item_ids = []
         self._round_statuses = []
+        self._round_match_summaries = []
 
-    def add_round_row(self, text, status="not_started"):
+    def add_round_row(self, text, status="not_started", match_status_summary=""):
         round_index = len(self._round_item_ids)
-        item_id = self.rounds_tree.insert("", "end", text=text)
+        normalized_status = self._normalize_status(status)
+        item_id = self.rounds_tree.insert(
+            "",
+            "end",
+            text=text,
+            values=(
+                self._format_status_label(normalized_status),
+                match_status_summary,
+            ),
+        )
         self._round_item_ids.append(item_id)
-        self._round_statuses.append(self._normalize_status(status))
+        self._round_statuses.append(normalized_status)
+        self._round_match_summaries.append(str(match_status_summary))
         self._apply_row_style(round_index)
 
-    def update_round_status(self, index, status):
+    def update_round_status(self, index, status, match_status_summary=None):
         if not 0 <= index < len(self._round_item_ids):
             return
-        self._round_statuses[index] = self._normalize_status(status)
+        normalized_status = self._normalize_status(status)
+        self._round_statuses[index] = normalized_status
+        if match_status_summary is not None:
+            self._round_match_summaries[index] = str(match_status_summary)
+        item_id = self._round_item_ids[index]
+        self.rounds_tree.item(
+            item_id,
+            values=(
+                self._format_status_label(normalized_status),
+                self._round_match_summaries[index],
+            ),
+        )
         self._apply_row_style(index)
 
     def select_round(self, index):
@@ -107,3 +136,7 @@ class TournamentRoundsPanel(CtkLabelFrame):
         if normalized not in {"not_started", "ongoing", "finished"}:
             return "not_started"
         return normalized
+
+    @staticmethod
+    def _format_status_label(status: str) -> str:
+        return status.replace("_", " ").title()

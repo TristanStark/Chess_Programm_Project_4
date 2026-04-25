@@ -21,13 +21,15 @@ instances stored in memory.
 class Tournament:
     def __init__(self, name: str, venue: str, start_date: datetime,
                  end_date: datetime, description: str, players: List[Player],
-                 rounds: List[Round], number_of_rounds: int = 4):
+                 rounds: List[Round], number_of_rounds: int = 4,
+                 automatic_pairings: bool = True):
         self.name = name
         self.venue = venue
         self.start_date = start_date
         self.end_date = end_date
 
         self.number_of_rounds = number_of_rounds
+        self.automatic_pairings = bool(automatic_pairings)
         self.description = description
         self.players = players
         self.rounds = rounds

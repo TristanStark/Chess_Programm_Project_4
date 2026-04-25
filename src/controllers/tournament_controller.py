@@ -7,6 +7,7 @@ from src.controllers.pairings_genrator import PairingGenerator
 from src.models.matches import Match, Round, Score
 from src.models.players import Player
 from src.models.tournaments import Tournament
+from src.controllers.settings import debug_print
 
 
 class TournamentController:
@@ -32,6 +33,7 @@ class TournamentController:
         populate_rounds: bool = True,
         populate_matches_from_current_round: bool = True,
     ) -> None:
+        self._sync_players_total_points(tournament)
         self.tournament_view.tournament_name_label.configure(text=tournament.name)
         self.tournament_view.tournament_venue_label.configure(text=tournament.venue)
 
@@ -77,8 +79,6 @@ class TournamentController:
     def can_create_tournament(
         self, current_tournament: Tournament | None
     ) -> tuple[bool, str]:
-        if self.is_tournament_ongoing(current_tournament):
-            return False, "Cannot create a tournament while tournament is ongoing."
         return True, ""
 
     def add_player_to_tournament(
@@ -112,6 +112,7 @@ class TournamentController:
                 return False, "This player is already in the tournament."
 
         tournament.players.append(player)
+        self._sync_players_total_points(tournament)
         self.tournament_view.left_panel.set_players(tournament.players)
         return True, f"Player '{player.first_name} {player.last_name}' added."
 
@@ -139,6 +140,7 @@ class TournamentController:
             return False, "Selected player is not in the tournament."
 
         tournament.players = updated_players
+        self._sync_players_total_points(tournament)
         self.tournament_view.left_panel.set_players(tournament.players)
         return True, f"Player '{player.first_name} {player.last_name}' removed."
 
@@ -234,7 +236,8 @@ class TournamentController:
         try:
             tournament.rounds = []
             self._initialize_pairing_generator(tournament)
-            self._generate_next_round_if_possible(tournament)
+            if self.uses_automatic_pairings(tournament):
+                self._generate_next_round_if_possible(tournament)
         except Exception as exc:
             return False, f"Failed to generate rounds: {exc}"
 
@@ -285,14 +288,24 @@ class TournamentController:
         if not round_.matches:
             return
 
+        debug_print("Syncing round status from matches...")
+        debug_print(f"Round '{round_.name}' has {len(round_.matches)} matches.")
+        debug_print("Match statuses:")
+        for match in round_.matches:
+            debug_print(f"  - {match.player1.player} vs {match.player2.player}: {match.status}")
         statuses = [match.status for match in round_.matches]
+        # We stop if all matches are finished
         if all(status == "finished" for status in statuses):
             round_.status = "finished"
-            self._generate_next_round_if_possible(tournament)
-        elif any(status == "ongoing" for status in statuses):
-            round_.status = "ongoing"
-        else:
+            if self.uses_automatic_pairings(tournament):
+                self._generate_next_round_if_possible(tournament)
+        # I dunno how we can have this case but
+        # if all matches are not started we set the round as not started
+        elif all(status == "not_started" for status in statuses):
             round_.status = "not_started"
+        # default case: ongoing
+        else:
+            round_.status = "ongoing"
 
     def update_tournament_status_from_matches(self, tournament: Tournament | None) -> None:
         if tournament is None:
@@ -328,6 +341,12 @@ class TournamentController:
             return False
         return str(getattr(tournament, "status", "")).strip().lower() == "ongoing"
 
+    @staticmethod
+    def uses_automatic_pairings(tournament: Tournament | None) -> bool:
+        if tournament is None:
+            return True
+        return bool(getattr(tournament, "automatic_pairings", True))
+
     def _create_tournament_from_form_data(self, tournament_data: dict):
         name = tournament_data.get("name", "").strip()
         venue = tournament_data.get("venue", "").strip()
@@ -335,6 +354,7 @@ class TournamentController:
         end_date_raw = tournament_data.get("end_date", "").strip()
         number_of_rounds_raw = tournament_data.get("number_of_rounds", "").strip()
         status = tournament_data.get("status", "Preparation").strip().title()
+        automatic_pairings = bool(tournament_data.get("automatic_pairings", True))
         description = tournament_data.get("description", "").strip()
 
         if not name:
@@ -371,6 +391,7 @@ class TournamentController:
             players=[],
             rounds=[],
             number_of_rounds=number_of_rounds,
+            automatic_pairings=automatic_pairings,
         )
         tournament.status = status
         return True, "", tournament
@@ -389,6 +410,8 @@ class TournamentController:
 
     def _generate_next_round_if_possible(self, tournament: Tournament | None) -> bool:
         if tournament is None:
+            return False
+        if not self.uses_automatic_pairings(tournament):
             return False
 
         total_rounds = int(tournament.number_of_rounds)
@@ -440,6 +463,88 @@ class TournamentController:
     def generate_next_round_if_possible(self, tournament: Tournament | None) -> bool:
         return self._generate_next_round_if_possible(tournament)
 
+    def refresh_player_points(self, tournament: Tournament | None) -> None:
+        if tournament is None:
+            return
+        self._sync_players_total_points(tournament)
+
+    def create_manual_round(
+        self,
+        tournament: Tournament | None,
+        *,
+        round_name: str,
+        pairings: list[tuple[str, str]],
+    ) -> tuple[bool, str]:
+        if tournament is None:
+            return False, "No active tournament."
+        if not self.is_tournament_ongoing(tournament):
+            return False, "Tournament must be ongoing."
+        if len(tournament.rounds) >= int(tournament.number_of_rounds):
+            return False, "All rounds have already been created."
+        if tournament.rounds and tournament.rounds[-1].status != "finished":
+            return False, "Previous round must be finished first."
+
+        normalized_round_name = str(round_name).strip()
+        if not normalized_round_name:
+            return False, "Round name is required."
+
+        expected_matches = len(tournament.players) // 2
+        if len(pairings) != expected_matches:
+            return False, f"Expected {expected_matches} matches."
+
+        players_by_ncid = {
+            player.national_chess_identifier: player for player in tournament.players
+        }
+
+        seen_players: set[str] = set()
+        matches: list[Match] = []
+        for player_1_ncid, player_2_ncid in pairings:
+            if player_1_ncid == player_2_ncid:
+                return False, "A player cannot be paired against themselves."
+            if player_1_ncid not in players_by_ncid or player_2_ncid not in players_by_ncid:
+                return False, "Pairings contain unknown players."
+            if player_1_ncid in seen_players or player_2_ncid in seen_players:
+                return False, "Each player must appear exactly once."
+
+            seen_players.add(player_1_ncid)
+            seen_players.add(player_2_ncid)
+            matches.append(
+                Match(
+                    player1=Score(player=players_by_ncid[player_1_ncid], score=0.0),
+                    player2=Score(player=players_by_ncid[player_2_ncid], score=0.0),
+                    status="not_started",
+                )
+            )
+
+        if len(seen_players) != len(tournament.players):
+            return False, "Each tournament player must be paired exactly once."
+
+        tournament.rounds.append(
+            Round(
+                name=normalized_round_name,
+                matches=matches,
+                start_date=tournament.start_date,
+                end_date=tournament.end_date,
+                status="not_started",
+            )
+        )
+        return True, ""
+
+    def rename_round(
+        self,
+        tournament: Tournament | None,
+        round_index: int | None,
+        new_name: str,
+    ) -> tuple[bool, str]:
+        round_ = self._get_round_by_index(tournament, round_index)
+        if round_ is None:
+            return False, "No round selected."
+        normalized_name = str(new_name).strip()
+        if not normalized_name:
+            return False, "Round name is required."
+        round_.name = normalized_name
+        return True, ""
+
     def _serialize_tournament(self, tournament: Tournament) -> dict:
         return {
             "name": tournament.name,
@@ -447,6 +552,7 @@ class TournamentController:
             "start_date": self._format_datetime_for_json(tournament.start_date),
             "end_date": self._format_datetime_for_json(tournament.end_date),
             "number_of_rounds": tournament.number_of_rounds,
+            "automatic_pairings": bool(getattr(tournament, "automatic_pairings", True)),
             "status": tournament.status,
             "description": tournament.description,
             "players": [player.to_dict() for player in tournament.players],
@@ -532,6 +638,7 @@ class TournamentController:
             players=players,
             rounds=rounds,
             number_of_rounds=number_of_rounds,
+            automatic_pairings=bool(data.get("automatic_pairings", True)),
         )
         tournament.status = str(data.get("status", "Preparation")).strip().title()
         return tournament
@@ -670,12 +777,10 @@ class TournamentController:
     def _current_round_number(tournament: Tournament) -> int:
         if not tournament.rounds:
             return 0
-        finished_or_ongoing = [
-            round_
-            for round_ in tournament.rounds
-            if round_.status in {"ongoing", "finished"}
-        ]
-        return len(finished_or_ongoing)
+        for index, round_ in enumerate(tournament.rounds, start=1):
+            if str(getattr(round_, "status", "")).strip().lower() == "ongoing":
+                return index
+        return 0
 
     @staticmethod
     def _infer_round_status(round_) -> str:
@@ -706,3 +811,22 @@ class TournamentController:
         if isinstance(value, datetime):
             return value.strftime("%Y-%m-%d")
         return str(value)
+
+    @staticmethod
+    def _compute_total_points_by_player(tournament: Tournament) -> dict[str, float]:
+        totals = {
+            player.national_chess_identifier: 0.0
+            for player in tournament.players
+        }
+        for round_ in tournament.rounds:
+            for match in round_.matches:
+                player_1_ncid = match.player1.player.national_chess_identifier
+                player_2_ncid = match.player2.player.national_chess_identifier
+                totals[player_1_ncid] = totals.get(player_1_ncid, 0.0) + float(match.player1.score)
+                totals[player_2_ncid] = totals.get(player_2_ncid, 0.0) + float(match.player2.score)
+        return totals
+
+    def _sync_players_total_points(self, tournament: Tournament) -> None:
+        totals = self._compute_total_points_by_player(tournament)
+        for player in tournament.players:
+            player.total_points = float(totals.get(player.national_chess_identifier, 0.0))

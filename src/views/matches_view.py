@@ -16,6 +16,7 @@ class TournamentMatchesPanel(CtkLabelFrame):
         self._match_row_frames = []
         self._match_row_statuses = []
         self._selected_match_index = None
+        self._selected_match_indices = set()
         self.content.grid_rowconfigure(0, weight=1)
         self.content.grid_columnconfigure(0, weight=1)
 
@@ -36,6 +37,7 @@ class TournamentMatchesPanel(CtkLabelFrame):
         self._match_row_frames = []
         self._match_row_statuses = []
         self._selected_match_index = None
+        self._selected_match_indices = set()
         self._update_scrollbar_visibility()
         if self._on_match_selected is not None:
             self._on_match_selected(None)
@@ -65,13 +67,17 @@ class TournamentMatchesPanel(CtkLabelFrame):
     def select_match(self, index):
         if index is None:
             self._selected_match_index = None
+            self._selected_match_indices = set()
             for idx in range(len(self._match_row_frames)):
                 self._apply_row_style(idx)
             if self._on_match_selected is not None:
                 self._on_match_selected(None)
             return
         if 0 <= index < len(self._match_row_frames):
-            self._select_match(index)
+            self._select_match(index, keep_existing=False)
+
+    def get_selected_match_indices(self):
+        return sorted(self._selected_match_indices)
 
     def _render_match_row(self, left_text, right_text, status):
         row = ctk.CTkFrame(
@@ -118,32 +124,48 @@ class TournamentMatchesPanel(CtkLabelFrame):
         )
         right_label.grid(row=0, column=2, sticky="e", padx=(8, 10), pady=(10, 10))
 
-        row.bind("<Button-1>", lambda _event, idx=match_index: self._select_match(idx))
+        row.bind("<Button-1>", lambda event, idx=match_index: self._on_match_clicked(event, idx))
         left_label.bind(
-            "<Button-1>", lambda _event, idx=match_index: self._select_match(idx)
+            "<Button-1>", lambda event, idx=match_index: self._on_match_clicked(event, idx)
         )
         separator_label.bind(
-            "<Button-1>", lambda _event, idx=match_index: self._select_match(idx)
+            "<Button-1>", lambda event, idx=match_index: self._on_match_clicked(event, idx)
         )
         right_label.bind(
-            "<Button-1>", lambda _event, idx=match_index: self._select_match(idx)
+            "<Button-1>", lambda event, idx=match_index: self._on_match_clicked(event, idx)
         )
         self._apply_row_style(match_index)
         self._update_scrollbar_visibility()
 
-    def _select_match(self, index):
-        self._selected_match_index = index
+    def _on_match_clicked(self, event, index):
+        keep_existing = bool(getattr(event, "state", 0) & 0x0004)
+        self._select_match(index, keep_existing=keep_existing)
+
+    def _select_match(self, index, keep_existing=False):
+        if keep_existing:
+            if index in self._selected_match_indices:
+                self._selected_match_indices.discard(index)
+            else:
+                self._selected_match_indices.add(index)
+        else:
+            self._selected_match_indices = {index}
+
+        if self._selected_match_indices:
+            self._selected_match_index = max(self._selected_match_indices)
+        else:
+            self._selected_match_index = None
+
         for idx in range(len(self._match_row_frames)):
             self._apply_row_style(idx)
         if self._on_match_selected is not None:
-            self._on_match_selected(index)
+            self._on_match_selected(self._selected_match_index)
 
     def _apply_row_style(self, index):
         if not 0 <= index < len(self._match_row_frames):
             return
         row = self._match_row_frames[index]
         status = self._match_row_statuses[index]
-        is_selected = index == self._selected_match_index
+        is_selected = index in self._selected_match_indices
         base_color = self._STATUS_COLORS.get(status, self._STATUS_COLORS["not_started"])
 
         row.configure(

@@ -2,6 +2,7 @@ from pathlib import Path
 from src.models.players import Player
 from typing import List, Optional
 from src.models.tournaments import Tournament
+from src.controllers.settings import debug_print
 
 
 class PlayersController:
@@ -74,10 +75,10 @@ class PlayersController:
         )
 
         if player.check_validity():
-            print(f"Successfully created valid player: {player}")
+            debug_print(f"Successfully created valid player: {player}")
             return player
         else:
-            print("Error: Provided player data is invalid.")
+            debug_print("Error: Provided player data is invalid.")
             return None
 
     def save_player(self, player: Player, filename: str) -> Path:
@@ -94,7 +95,7 @@ class PlayersController:
 
         file_path = self.players_directory / f"{filename}.json"
         player.save(file_path)
-        print(f"Player successfully saved to {file_path}")
+        debug_print(f"Player successfully saved to {file_path}")
         return file_path
 
     def load_player(self, filename: str) -> Optional[Player]:
@@ -106,15 +107,15 @@ class PlayersController:
         """
         file_path = self.players_directory / f"{filename}.json"
         if not file_path.exists():
-            print(f"Error: Player file not found at {file_path}")
+            debug_print(f"Error: Player file not found at {file_path}")
             return None
 
         try:
             player = Player.load(file_path)
-            print(f"Player successfully loaded from {file_path}")
+            debug_print(f"Player successfully loaded from {file_path}")
             return player
         except Exception as e:
-            print(f"Error loading player from {file_path}: {e}")
+            debug_print(f"Error loading player from {file_path}: {e}")
             return None
 
     def get_all_players(self) -> List[Player]:
@@ -160,16 +161,16 @@ if __name__ == '__main__':
         # 2. Test Saving
         try:
             saved_path = controller.save_player(valid_player, "magnus_carlsen")
-            print(f"Saved path check: {saved_path}")
+            debug_print(f"Saved path check: {saved_path}")
         except ValueError as e:
-            print(f"Saving failed: {e}")
+            debug_print(f"Saving failed: {e}")
 
         # 3. Test Loading
         loaded_player = controller.load_player("magnus_carlsen")
         if loaded_player:
-            print(f"Verification: Loaded player name is {loaded_player}")
+            debug_print(f"Verification: Loaded player name is {loaded_player}")
 
     # Clean up (optional)
     import shutil
     shutil.rmtree(test_dir, ignore_errors=True)
-    print("\nCleanup complete.")
+    debug_print("\nCleanup complete.")
