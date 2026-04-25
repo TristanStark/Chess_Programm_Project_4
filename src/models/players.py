@@ -7,12 +7,12 @@ from typing import Dict, Optional, Any, Union
 
 class Player():
     def __init__(self, first_name: str, last_name: str, date_of_birth: str,
-                 national_chess_identifier: str, 
+                 national_chess_identifier: str,
                  tournament_history: Optional[Dict[str, MatchHistory]] = None):
         self.first_name: str = first_name
         self.last_name : str = last_name
         self.date_of_birth : str = date_of_birth
-        self.national_chess_identifier : str  = national_chess_identifier
+        self.national_chess_identifier : str = national_chess_identifier
         self.tournament_history: Dict[str, MatchHistory] = tournament_history or {}
 
     def __str__(self):

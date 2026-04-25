@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ page_title or 'Tournaments Overview' }}</title>
+  <style>
+    :root {
+      --bg: #fffaf5;
+      --surface: #ffffff;
+      --surface-soft: #fff7ed;
+      --border: #fed7aa;
+      --text: #431407;
+      --muted: #9a3412;
+      --accent: #ea580c;
+      --accent-soft: #ffedd5;
+      --success: #166534;
+      --shadow: 0 14px 34px rgba(154, 52, 18, 0.10);
+      --radius: 20px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: Inter, Arial, Helvetica, sans-serif;
+      background: linear-gradient(180deg, #fff7ed 0%, var(--bg) 220px);
+      color: var(--text);
+    }
+
+    body {
+      padding: 30px;
+    }
+
+    .page {
+      max-width: 1220px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #ffffff 0%, #fff7ed 100%);
+      border: 1px solid var(--border);
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+      padding: 28px;
+    }
+
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: 2.1rem;
+      line-height: 1.1;
+      color: var(--accent);
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.65;
+      max-width: 880px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid var(--border);
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .section-header {
+      padding: 18px 22px;
+      background: var(--surface-soft);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .section-header h2 {
+      margin: 0;
+      font-size: 1.08rem;
+    }
+
+    .section-body {
+      padding: 22px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px 16px;
+    }
+
+    .stat-label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
+    .stat-value {
+      font-size: 1.14rem;
+      font-weight: 900;
+      line-height: 1.35;
+    }
+
+    .card-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+    }
+
+    .tournament-card {
+      background: linear-gradient(180deg, #ffffff 0%, #fffaf5 100%);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .tournament-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .tournament-title {
+      margin: 0;
+      font-size: 1.1rem;
+      line-height: 1.35;
+      color: var(--text);
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 0.8rem;
+      font-weight: 800;
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    .meta-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 14px;
+    }
+
+    .meta-item {
+      min-width: 0;
+    }
+
+    .meta-item .label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+
+    .meta-item .value {
+      font-weight: 700;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .description {
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+
+    .empty {
+      padding: 24px;
+      border: 1px dashed var(--border);
+      border-radius: 16px;
+      color: var(--muted);
+      background: white;
+    }
+
+    .footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+      padding-bottom: 8px;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+        background: white;
+      }
+
+      .hero,
+      .section,
+      .stat-card,
+      .tournament-card {
+        box-shadow: none;
+      }
+
+      .page {
+        max-width: none;
+      }
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 16px;
+      }
+
+      .hero,
+      .section-body,
+      .section-header {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .meta-list {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <h1>{{ page_title or 'Tournaments Overview' }}</h1>
+          <p>
+            Standalone list of all tournaments rendered from Python using JSON data.
+            Generated at {{ generated_at or 'N/A' }}.
+          </p>
+        </div>
+        <div class="badge">{{ tournaments|length }} tournament(s)</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <h2>All tournaments</h2>
+        <div class="badge">Card layout</div>
+      </div>
+      <div class="section-body">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">Total tournaments</span>
+            <div class="stat-value">{{ tournaments|length }}</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Total registered players</span>
+            <div class="stat-value">{{ tournaments | sum(attribute='players|length') if false else total_players or 0 }}</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Total configured rounds</span>
+            <div class="stat-value">{{ total_rounds or 0 }}</div>
+          </div>
+        </div>
+
+        {% if tournaments %}
+        <div class="card-list">
+          {% for tournament in tournaments %}
+          <article class="tournament-card">
+            <div class="tournament-head">
+              <h3 class="tournament-title">{{ tournament.name }}</h3>
+              <span class="chip">{{ tournament.number_of_rounds }} round(s)</span>
+            </div>
+
+            <div class="meta-list">
+              <div class="meta-item">
+                <span class="label">Venue</span>
+                <div class="value">{{ tournament.venue }}</div>
+              </div>
+              <div class="meta-item">
+                <span class="label">Players</span>
+                <div class="value">{{ tournament.players|length }}</div>
+              </div>
+              <div class="meta-item">
+                <span class="label">Start date</span>
+                <div class="value">{{ tournament.start_date }}</div>
+              </div>
+              <div class="meta-item">
+                <span class="label">End date</span>
+                <div class="value">{{ tournament.end_date }}</div>
+              </div>
+              <div class="meta-item">
+                <span class="label">Status</span>
+                <div class="value">{{ tournament.status if tournament.status is defined else 'Not started' }}</div>
+              </div>
+              <div class="meta-item">
+                <span class="label">Matches recorded</span>
+                <div class="value">{{ tournament.match_count if tournament.match_count is defined else 'N/A' }}</div>
+              </div>
+            </div>
+
+            {% if tournament.description %}
+            <div class="description">{{ tournament.description }}</div>
+            {% endif %}
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty">No tournaments available.</div>
+        {% endif %}
+      </div>
+    </section>
+
+    <div class="footer">Single-report tournament template for Python rendering.</div>
+  </div>
+</body>
+</html>

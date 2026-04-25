@@ -41,11 +41,13 @@ class TournamentRoundsPanel(CtkLabelFrame):
         self.rounds_tree.heading("#0", text="Round")
         self.rounds_tree.heading("status", text="Status")
         self.rounds_tree.heading("matches_status", text="Matches")
-        self.rounds_tree.column("#0", anchor="w", stretch=True, width=300, minwidth=200)
-        self.rounds_tree.column("status", anchor="e", stretch=False, width=120, minwidth=100)
-        self.rounds_tree.column("matches_status", anchor="w", stretch=True, width=330, minwidth=260)
+        self.rounds_tree.column("#0", anchor="w", stretch=False, width=280, minwidth=180)
+        self.rounds_tree.column("status", anchor="e", stretch=False, width=120, minwidth=90)
+        self.rounds_tree.column("matches_status", anchor="w", stretch=False, width=280, minwidth=180)
         self.rounds_tree.grid(row=0, column=0, sticky="nsew")
         self.rounds_tree.bind("<<TreeviewSelect>>", self._handle_tree_selection)
+        self.rounds_tree.bind("<Configure>", self._handle_tree_resize, add="+")
+        self.after(0, self._resize_columns_to_fit)
 
     def set_on_round_selected(self, callback):
         self._on_round_selected = callback
@@ -129,6 +131,23 @@ class TournamentRoundsPanel(CtkLabelFrame):
             background=self._STATUS_COLORS.get(status, self._STATUS_COLORS["not_started"]),
             foreground="black",
         )
+
+    def _handle_tree_resize(self, _event):
+        self._resize_columns_to_fit()
+
+    def _resize_columns_to_fit(self):
+        total_width = self.rounds_tree.winfo_width()
+        if total_width <= 1:
+            return
+
+        status_width = 120
+        available_for_text = max(total_width - status_width - 24, 360)
+        round_width = max(int(available_for_text * 0.45), 180)
+        matches_width = max(available_for_text - round_width, 180)
+
+        self.rounds_tree.column("#0", width=round_width)
+        self.rounds_tree.column("status", width=status_width)
+        self.rounds_tree.column("matches_status", width=matches_width)
 
     @staticmethod
     def _normalize_status(status):

@@ -1,114 +1,8 @@
 import customtkinter as ctk
 import tkinter as tk
-from tkinter import ttk
 from src.controllers.settings import debug_print
-
-
-class ScrollableTree(ctk.CTkFrame):
-    def __init__(self, parent, title: str):
-        super().__init__(parent)
-
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
-
-        self.label = ctk.CTkLabel(self, text=title)
-        self.label.grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(6, 2))
-
-        self.tree = ttk.Treeview(
-            self,
-            columns=("player",),
-            show="headings",
-            selectmode="browse",
-        )
-
-        self.tree.heading("player", text="Player")
-        self.tree.column("player", anchor="center", stretch=True)
-
-        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=self.scrollbar.set)
-
-        self.tree.grid(row=1, column=0, sticky="nsew")
-        self.scrollbar.grid(row=1, column=1, sticky="ns")
-
-    def clear(self):
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
-    def insert_player(self, player: str):
-        self.tree.insert("", "end", iid=player, values=(player,))
-
-    def selected_player(self) -> str | None:
-        selection = self.tree.selection()
-        return selection[0] if selection else None
-
-    def exists(self, player: str) -> bool:
-        return self.tree.exists(player)
-
-    def bbox(self, player: str):
-        return self.tree.bbox(player)
-
-
-class PairList(ctk.CTkFrame):
-    def __init__(self, parent):
-        super().__init__(parent)
-
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
-
-        self.label = ctk.CTkLabel(self, text="Created pairs")
-        self.label.grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(6, 2))
-
-        self.tree = ttk.Treeview(
-            self,
-            columns=("left_player", "right_player"),
-            show="headings",
-            selectmode="browse",
-            height=6,
-        )
-
-        self.tree.heading("left_player", text="Left player")
-        self.tree.heading("right_player", text="Right player")
-
-        self.tree.column("left_player", anchor="center", stretch=True)
-        self.tree.column("right_player", anchor="center", stretch=True)
-
-        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=self.scrollbar.set)
-
-        self.tree.grid(row=1, column=0, sticky="nsew")
-        self.scrollbar.grid(row=1, column=1, sticky="ns")
-
-    def clear(self):
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
-    def insert_pair(self, left_player: str, right_player: str):
-        pair_id = self.make_pair_id(left_player, right_player)
-
-        self.tree.insert(
-            "",
-            "end",
-            iid=pair_id,
-            values=(left_player, right_player),
-        )
-
-    def selected_pair(self) -> tuple[str, str] | None:
-        selection = self.tree.selection()
-
-        if not selection:
-            return None
-
-        item_id = selection[0]
-        values = self.tree.item(item_id, "values")
-
-        if len(values) != 2:
-            return None
-
-        return values[0], values[1]
-
-    @staticmethod
-    def make_pair_id(left_player: str, right_player: str) -> str:
-        return f"{left_player}__PAIR__{right_player}"
+from src.views.pair_list_view import PairList
+from src.views.scrollable_tree_view import ScrollableTree
 
 
 class PlayerPairingFrame(ctk.CTkFrame):
@@ -245,7 +139,6 @@ class PlayerPairingFrame(ctk.CTkFrame):
 
         self.pairs[left_player] = right_player
 
-        # Remove both paired players from both lists.
         self.left_available.discard(left_player)
         self.left_available.discard(right_player)
         self.right_available.discard(left_player)
@@ -292,7 +185,6 @@ class PlayerPairingFrame(ctk.CTkFrame):
 
         del self.pairs[left_player]
 
-        # Re-add both players to both lists.
         self.left_available.add(left_player)
         self.left_available.add(right_player)
         self.right_available.add(left_player)
@@ -361,4 +253,3 @@ class PlayerPairingFrame(ctk.CTkFrame):
                 width=2,
                 fill="#1F1F1F",
             )
-
