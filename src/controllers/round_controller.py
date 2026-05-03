@@ -4,13 +4,13 @@ from typing import Callable, Iterable
 from src.models.matches import Round
 from src.models.tournaments import Tournament
 from src.controllers.settings import debug_print
-from src.views.rounds_view import TournamentRoundsPanel
+from src.controllers.view_contracts import RoundsViewProtocol
 
 
 class RoundController:
     """Controller responsible for sending Round model data to the rounds view."""
 
-    def __init__(self, rounds_view: TournamentRoundsPanel):
+    def __init__(self, rounds_view: RoundsViewProtocol):
         self.rounds_view = rounds_view
         self.rounds: list[Round] = []
 

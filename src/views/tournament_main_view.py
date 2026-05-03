@@ -1,13 +1,11 @@
 import customtkinter as ctk
 from pathlib import Path
-import re
 from tkinter import Menu, filedialog, messagebox
 from src.controllers.match_controller import MatchController
 from src.controllers.player_controller import PlayerController
 from src.controllers.players_controller import PlayersController
 from src.controllers.round_controller import RoundController
 from src.controllers.tournament_controller import TournamentController
-from src.models.players import Player
 from src.models.tournaments import Tournament
 from src.controllers.settings import debug_print, is_debug, toggle_debug
 from src.views.player_info_card_view import PlayerInfoCard
@@ -19,13 +17,19 @@ from src.views.rename_round_popup_view import RenameRoundPopup
 from src.views.rounds_view import TournamentRoundsPanel
 from src.views.matches_view import TournamentMatchesPanel
 from src.views.export_report_popup_view import ExportReportPopup
+from src.views.tournament_match_actions_mixin import TournamentMatchActionsMixin
+from src.views.tournament_view_helpers import (
+    build_player_filename,
+    format_player_option_label,
+    next_available_player_filename,
+)
 from src.exporters.tournament_report_exporter import TournamentReportExporter, ReportOption
 
 ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
 
 
-class TournamentView(ctk.CTkFrame):
+class TournamentView(TournamentMatchActionsMixin, ctk.CTkFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, corner_radius=0, fg_color="#EDEDED", **kwargs)
         self.current_tournament = None
@@ -196,9 +200,6 @@ class TournamentView(ctk.CTkFrame):
         self.player_2_controller = PlayerController(self.player_2_info_card)
 
         self.tournament_controller = TournamentController(
-            self,
-            round_controller=self.round_controller,
-            match_controller=self.match_controller,
             tournaments_directory=Path("data") / "tournaments",
         )
         self.report_exporter = TournamentReportExporter(
@@ -425,6 +426,29 @@ class TournamentView(ctk.CTkFrame):
         self._set_menu_item_enabled("add_player", has_active_tournament and can_add_player)
         self._set_menu_item_enabled("remove_player", has_active_tournament and can_remove_player)
 
+    def _render_tournament(
+        self,
+        tournament: Tournament,
+        *,
+        populate_rounds: bool = True,
+        populate_matches_from_current_round: bool = True,
+    ) -> None:
+        view_data = self.tournament_controller.build_view_data(tournament)
+        self.tournament_name_label.configure(text=view_data["name"])
+        self.tournament_venue_label.configure(text=view_data["venue"])
+        self.left_panel.set_tournament_infos(**view_data["infos"])
+        self.left_panel.set_players(view_data["players"])
+        self.left_panel.set_description(view_data["description"])
+
+        if populate_rounds:
+            self.round_controller.populate_from_tournament(tournament)
+
+        if populate_matches_from_current_round:
+            if tournament.rounds:
+                self.match_controller.populate_from_round(tournament.rounds[-1])
+            else:
+                self.match_controller.populate_view([])
+
     def _initialize_runtime_statuses(self, tournament: Tournament):
         self._selected_round_index = None
         self._selected_match_index = None
@@ -449,7 +473,7 @@ class TournamentView(ctk.CTkFrame):
             return
 
         self._initialize_runtime_statuses(self.current_tournament)
-        self.tournament_controller.populate_view(self.current_tournament)
+        self._render_tournament(self.current_tournament)
         if self.current_tournament.rounds:
             self._active_round_index_for_matches = len(self.current_tournament.rounds) - 1
             self.match_controller.populate_from_round(
@@ -568,11 +592,17 @@ class TournamentView(ctk.CTkFrame):
         else:
             self.player_1_controller.select_player(
                 selected_match.player1.player,
-                total_points=self._compute_player_total_points(selected_match.player1.player),
+                total_points=self.tournament_controller.compute_player_total_points(
+                    self.current_tournament,
+                    selected_match.player1.player,
+                ),
             )
             self.player_2_controller.select_player(
                 selected_match.player2.player,
-                total_points=self._compute_player_total_points(selected_match.player2.player),
+                total_points=self.tournament_controller.compute_player_total_points(
+                    self.current_tournament,
+                    selected_match.player2.player,
+                ),
             )
         self._refresh_action_buttons_visibility()
 
@@ -743,6 +773,11 @@ class TournamentView(ctk.CTkFrame):
             messagebox.showerror("Players", "\n".join(failed_imports))
             return
 
+        self._render_tournament(
+            self.current_tournament,
+            populate_rounds=False,
+            populate_matches_from_current_round=False,
+        )
         self._autosave_tournament()
         self._refresh_action_buttons_visibility()
 
@@ -774,6 +809,11 @@ class TournamentView(ctk.CTkFrame):
             messagebox.showerror("Players", message)
             return
 
+        self._render_tournament(
+            self.current_tournament,
+            populate_rounds=False,
+            populate_matches_from_current_round=False,
+        )
         self._autosave_tournament()
         self._refresh_action_buttons_visibility()
 
@@ -795,8 +835,15 @@ class TournamentView(ctk.CTkFrame):
                 "Invalid player data. NCID format must be 2 letters + 5 digits (example: AA12345).",
             )
 
-        base_filename = self._build_player_filename(player)
-        filename = self._next_available_player_filename(base_filename)
+        base_filename = build_player_filename(
+            player.first_name,
+            player.last_name,
+            player.national_chess_identifier,
+        )
+        filename = next_available_player_filename(
+            self.players_controller.players_directory,
+            base_filename,
+        )
         self.players_controller.save_player(player, filename)
         return True, ""
 
@@ -811,19 +858,6 @@ class TournamentView(ctk.CTkFrame):
         self._set_active_tournament(tournament, file_path=file_path)
         return True, ""
 
-    def _build_player_filename(self, player: Player):
-        raw_value = f"{player.first_name}_{player.last_name}_{player.national_chess_identifier}"
-        sanitized = re.sub(r"[^a-zA-Z0-9_]+", "_", raw_value).strip("_").lower()
-        return sanitized or "player"
-
-    def _next_available_player_filename(self, base_filename):
-        candidate = base_filename
-        suffix = 2
-        while (self.players_controller.players_directory / f"{candidate}.json").exists():
-            candidate = f"{base_filename}_{suffix}"
-            suffix += 1
-        return candidate
-
     def _on_start_tournament(self):
         success, message = self.tournament_controller.start_tournament(self.current_tournament)
         if not success:
@@ -833,7 +867,7 @@ class TournamentView(ctk.CTkFrame):
         self._selected_round_index = None
         self._selected_match_index = None
         self._active_round_index_for_matches = 0 if self.current_tournament.rounds else None
-        self.tournament_controller.populate_view(self.current_tournament)
+        self._render_tournament(self.current_tournament)
         if self._active_round_index_for_matches is not None:
             self.match_controller.populate_from_round(
                 self.current_tournament.rounds[self._active_round_index_for_matches]
@@ -852,7 +886,7 @@ class TournamentView(ctk.CTkFrame):
             messagebox.showerror("Tournament", message)
             return
 
-        self.tournament_controller.populate_view(
+        self._render_tournament(
             self.current_tournament,
             populate_rounds=False,
             populate_matches_from_current_round=False,
@@ -890,213 +924,19 @@ class TournamentView(ctk.CTkFrame):
 
         self._handle_round_finished()
         if self.current_tournament is not None:
-            self.tournament_controller.populate_view(
+            self._render_tournament(
                 self.current_tournament,
                 populate_rounds=True,
                 populate_matches_from_current_round=False,
             )
         self._autosave_tournament()
         self._refresh_action_buttons_visibility()
-
-    def _on_match_action_button(self):
-        match_status = self._get_selected_match_status()
-        if match_status == "not_started":
-            self._on_start_match()
-        elif match_status == "ongoing":
-            self._on_end_match()
-
-    def _on_start_match(self):
-        selected_indices = self.matches_panel.get_selected_match_indices()
-        if not selected_indices and self._selected_match_index is not None:
-            selected_indices = [self._selected_match_index]
-        if not selected_indices:
-            return
-
-        active_round_index = self._get_active_round_index()
-        can_change_match, _ = self.match_controller.can_change_match(
-            self.current_tournament,
-            active_round_index,
-        )
-        if not can_change_match:
-            return
-
-        started = False
-        for match_index in selected_indices:
-            match = self.match_controller.get_match_by_index(match_index)
-            if match is None or match.status != "not_started":
-                continue
-            started = self.match_controller.start_match(match_index) or started
-        if not started:
-            return
-
-        self.tournament_controller.update_tournament_status_from_matches(self.current_tournament)
-        if self.current_tournament is not None:
-            self.tournament_controller.populate_view(
-                self.current_tournament,
-                populate_rounds=False,
-                populate_matches_from_current_round=False,
-            )
-        self._autosave_tournament()
-        self._refresh_action_buttons_visibility()
-
-    def _on_end_match(self):
-        if self._selected_match_index is None:
-            return
-
-        active_round_index = self._get_active_round_index()
-        can_change_match, _ = self.match_controller.can_change_match(
-            self.current_tournament,
-            active_round_index,
-        )
-        if not can_change_match:
-            return
-
-        selected_match = self.match_controller.get_match_by_index(self._selected_match_index)
-        if selected_match is None or selected_match.status != "ongoing":
-            return
-
-        if self.match_result_popup is not None and self.match_result_popup.winfo_exists():
-            self.match_result_popup.lift()
-            self.match_result_popup.focus_force()
-            return
-
-        player_1_name = self._format_player_name(selected_match.player1.player)
-        player_2_name = self._format_player_name(selected_match.player2.player)
-
-        self.match_result_popup = ctk.CTkToplevel(self.winfo_toplevel())
-        self.match_result_popup.title("Match Result")
-        self.match_result_popup.geometry("560x140")
-        self.match_result_popup.resizable(False, False)
-        self.match_result_popup.transient(self.winfo_toplevel())
-        self.match_result_popup.grab_set()
-        self.match_result_popup.protocol("WM_DELETE_WINDOW", self._close_match_result_popup)
-
-        self.match_result_popup.grid_columnconfigure(0, weight=1)
-        self.match_result_popup.grid_rowconfigure(0, weight=1)
-
-        buttons_container = ctk.CTkFrame(self.match_result_popup, fg_color="transparent")
-        buttons_container.grid(row=0, column=0, padx=12, pady=16, sticky="ew")
-        buttons_container.grid_columnconfigure(0, weight=1)
-        buttons_container.grid_columnconfigure(1, weight=1)
-        buttons_container.grid_columnconfigure(2, weight=1)
-
-        ctk.CTkButton(
-            buttons_container,
-            text=player_1_name,
-            command=lambda: self._run_action_with_autosave(
-                lambda: self._finalize_match_result("player1")
-            ),
-        ).grid(row=0, column=0, padx=(0, 6), sticky="ew")
-        ctk.CTkButton(
-            buttons_container,
-            text="Tie",
-            command=lambda: self._run_action_with_autosave(
-                lambda: self._finalize_match_result("tie")
-            ),
-        ).grid(row=0, column=1, padx=6, sticky="ew")
-        ctk.CTkButton(
-            buttons_container,
-            text=player_2_name,
-            command=lambda: self._run_action_with_autosave(
-                lambda: self._finalize_match_result("player2")
-            ),
-        ).grid(row=0, column=2, padx=(6, 0), sticky="ew")
-
-        self.match_result_popup.bind("<Escape>", lambda _event: self._close_match_result_popup())
-
-    def _finalize_match_result(self, result: str):
-        if self._selected_match_index is None:
-            self._close_match_result_popup()
-            return
-
-        active_round_index = self._get_active_round_index()
-        selected_round = self.round_controller.get_round_by_index(active_round_index)
-        selected_match = self.match_controller.get_match_by_index(self._selected_match_index)
-        rounds_count_before_sync = (
-            len(self.current_tournament.rounds) if self.current_tournament is not None else 0
-        )
-
-        finished = self.match_controller.finish_match(
-            self._selected_match_index,
-            result,
-            round_=selected_round,
-            tournament=self.current_tournament,
-        )
-        self._close_match_result_popup()
-        if not finished:
-            return
-
-        self.tournament_controller.update_pairing_generator_after_match(
-            self.current_tournament,
-            selected_match,
-            result,
-        )
-
-        self.tournament_controller.sync_round_status_from_matches(
-            self.current_tournament,
-            active_round_index,
-        )
-        self._handle_round_finished()
-        self.tournament_controller.update_tournament_status_from_matches(self.current_tournament)
-
-        if self.current_tournament is not None:
-            self.tournament_controller.refresh_player_points(self.current_tournament)
-            self.left_panel.set_players(self.current_tournament.players)
-            rounds_count_after_sync = len(self.current_tournament.rounds)
-            moved_to_next_round = rounds_count_after_sync > rounds_count_before_sync
-            target_round_index = active_round_index
-            if moved_to_next_round:
-                target_round_index = rounds_count_after_sync - 1
-                self._selected_match_index = None
-
-            self.tournament_controller.populate_view(
-                self.current_tournament,
-                populate_rounds=True,
-                populate_matches_from_current_round=False,
-            )
-
-            if target_round_index is not None:
-                self._active_round_index_for_matches = target_round_index
-                self.rounds_panel.select_round(target_round_index)
-                if (
-                    not moved_to_next_round
-                    and selected_round is not None
-                    and self._selected_match_index is not None
-                ):
-                    self.matches_panel.select_match(self._selected_match_index)
-
-        self._autosave_tournament()
-        self._refresh_action_buttons_visibility()
-
-    def _close_match_result_popup(self):
-        if self.match_result_popup is not None and self.match_result_popup.winfo_exists():
-            self.match_result_popup.grab_release()
-            self.match_result_popup.destroy()
-        self.match_result_popup = None
-
-    def _get_active_round_index(self):
-        if self._selected_round_index is not None:
-            return self._selected_round_index
-        return self._active_round_index_for_matches
 
     def _sync_round_status_colors(self):
         if self.current_tournament is None:
             return
         for index, round_ in enumerate(self.current_tournament.rounds):
             self.round_controller.update_round_status(index, round_.status)
-
-    def _compute_player_total_points(self, player) -> float:
-        if self.current_tournament is None or player is None:
-            return 0.0
-        target_ncid = getattr(player, "national_chess_identifier", "")
-        total_points = 0.0
-        for round_ in self.current_tournament.rounds:
-            for match in round_.matches:
-                if match.player1.player.national_chess_identifier == target_ncid:
-                    total_points += float(match.player1.score)
-                if match.player2.player.national_chess_identifier == target_ncid:
-                    total_points += float(match.player2.score)
-        return total_points
 
     def _handle_round_finished(self):
         if self.current_tournament is None:
@@ -1107,7 +947,15 @@ class TournamentView(ctk.CTkFrame):
             return
 
         if self.tournament_controller.uses_automatic_pairings(self.current_tournament):
-            self.tournament_controller.generate_next_round_if_possible(self.current_tournament)
+            created_new_round = self.tournament_controller.generate_next_round_if_possible(
+                self.current_tournament
+            )
+            if created_new_round:
+                return
+
+        can_stop, _ = self.tournament_controller.can_stop_tournament(self.current_tournament)
+        if can_stop:
+            self.tournament_controller.stop_tournament(self.current_tournament)
             return
 
         self._prompt_manual_round_creation_if_possible()
@@ -1143,7 +991,7 @@ class TournamentView(ctk.CTkFrame):
             return False, "No active tournament."
 
         players_by_label = {
-            self._format_player_option_label(player): player.national_chess_identifier
+            format_player_option_label(player): player.national_chess_identifier
             for player in self.current_tournament.players
         }
         resolved_pairings = []
@@ -1164,7 +1012,7 @@ class TournamentView(ctk.CTkFrame):
         if not success:
             return False, message
 
-        self.tournament_controller.populate_view(
+        self._render_tournament(
             self.current_tournament,
             populate_rounds=True,
             populate_matches_from_current_round=False,
@@ -1209,7 +1057,7 @@ class TournamentView(ctk.CTkFrame):
         if not success:
             return False, message
 
-        self.tournament_controller.populate_view(
+        self._render_tournament(
             self.current_tournament,
             populate_rounds=True,
             populate_matches_from_current_round=False,
@@ -1219,20 +1067,3 @@ class TournamentView(ctk.CTkFrame):
         self._autosave_tournament()
         self._refresh_action_buttons_visibility()
         return True, ""
-
-    @staticmethod
-    def _format_player_option_label(player):
-        first_name = getattr(player, "first_name", "")
-        last_name = getattr(player, "last_name", "")
-        ncid = getattr(player, "national_chess_identifier", "")
-        full_name = f"{first_name} {last_name}".strip()
-        if full_name:
-            return f"{full_name} [{ncid}]"
-        return str(player)
-
-    @staticmethod
-    def _format_player_name(player):
-        first_name = getattr(player, "first_name", "")
-        last_name = getattr(player, "last_name", "")
-        full_name = f"{first_name} {last_name}".strip()
-        return full_name if full_name else str(player)

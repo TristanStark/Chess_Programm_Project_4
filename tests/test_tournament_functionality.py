@@ -3,6 +3,7 @@ from __future__ import annotations
 from src.controllers.match_controller import MatchController
 from src.controllers.round_controller import RoundController
 from src.controllers.tournament_controller import TournamentController
+from src.models.matches import Round
 
 
 def _complete_all_matches_for_round(
@@ -72,13 +73,6 @@ def test_tournament_full_flow_generates_rounds_and_completes(
         round_index=1,
     )
     assert tournament_with_four_players.rounds[1].status == "finished"
-
-    can_stop, stop_message = tournament_controller.can_stop_tournament(
-        tournament_with_four_players
-    )
-    assert can_stop is True, stop_message
-    stopped, _ = tournament_controller.stop_tournament(tournament_with_four_players)
-    assert stopped is True
     assert tournament_with_four_players.status == "Completed"
 
 
@@ -108,3 +102,58 @@ def test_create_save_and_reload_tournament_json_roundtrip(
     assert loaded_tournament is not None
     assert loaded_tournament.name == tournament_with_four_players.name
     assert len(loaded_tournament.players) == len(tournament_with_four_players.players)
+
+
+def test_tournament_is_not_completed_before_configured_round_count(
+    tournament_with_four_players,
+    dummy_tournament_view,
+) -> None:
+    controller = TournamentController(tournament_view=dummy_tournament_view)
+    tournament_with_four_players.status = "Ongoing"
+
+    tournament_with_four_players.rounds = [
+        Round(
+            name="Round 1",
+            matches=[],
+            start_date=tournament_with_four_players.start_date,
+            end_date=tournament_with_four_players.end_date,
+            status="finished",
+        ),
+    ]
+
+    controller.update_tournament_status_from_matches(tournament_with_four_players)
+    assert tournament_with_four_players.status == "Ongoing"
+
+
+def test_current_round_prefers_first_not_started_round(
+    tournament_with_four_players,
+    dummy_tournament_view,
+) -> None:
+    controller = TournamentController(tournament_view=dummy_tournament_view)
+    tournament_with_four_players.number_of_rounds = 4
+    tournament_with_four_players.rounds = [
+        Round(
+            name="Round 1",
+            matches=[],
+            start_date=tournament_with_four_players.start_date,
+            end_date=tournament_with_four_players.end_date,
+            status="finished",
+        ),
+        Round(
+            name="Round 2",
+            matches=[],
+            start_date=tournament_with_four_players.start_date,
+            end_date=tournament_with_four_players.end_date,
+            status="finished",
+        ),
+        Round(
+            name="Round 3",
+            matches=[],
+            start_date=tournament_with_four_players.start_date,
+            end_date=tournament_with_four_players.end_date,
+            status="not_started",
+        ),
+    ]
+
+    view_data = controller.build_view_data(tournament_with_four_players)
+    assert view_data["infos"]["current_round"] == "3/4"

@@ -4,13 +4,13 @@ from typing import Iterable
 from src.models.history import MatchHistory
 from src.models.matches import Match, Round
 from src.models.tournaments import Tournament
-from src.views.matches_view import TournamentMatchesPanel
+from src.controllers.view_contracts import MatchesViewProtocol
 
 
 class MatchController:
     """Controller responsible for sending Match model data to the matches view."""
 
-    def __init__(self, matches_view: TournamentMatchesPanel):
+    def __init__(self, matches_view: MatchesViewProtocol):
         self.matches_view = matches_view
         self.matches: list[Match] = []
 

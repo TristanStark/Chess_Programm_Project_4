@@ -219,6 +219,29 @@
       white-space: pre-wrap;
     }
 
+    .podium {
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+    }
+
+    .podium-title {
+      display: block;
+      color: var(--muted);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+
+    .podium-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--text);
+      font-weight: 700;
+      line-height: 1.5;
+    }
+
     .empty {
       padding: 24px;
       border: 1px dashed var(--border);
@@ -341,6 +364,17 @@
                 <div class="value">{{ tournament.match_count if tournament.match_count is defined else 'N/A' }}</div>
               </div>
             </div>
+
+            {% if tournament.podium %}
+            <div class="podium">
+              <span class="podium-title">Podium</span>
+              <ol class="podium-list">
+                {% for podium_entry in tournament.podium %}
+                <li>{{ podium_entry.name }} ({{ podium_entry.points }} pt)</li>
+                {% endfor %}
+              </ol>
+            </div>
+            {% endif %}
 
             {% if tournament.description %}
             <div class="description">{{ tournament.description }}</div>

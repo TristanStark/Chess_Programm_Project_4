@@ -39,13 +39,13 @@ class DummyRoundsView:
         self.round_status_label = DummyLabel()
         self.rows = []
 
-    def add_round_row(self, text, status="not_started") -> None:
+    def add_round_row(self, text, status="not_started", match_status_summary: str = "") -> None:
         self.rows.append({"text": text, "status": status})
 
     def clear_rounds(self) -> None:
         self.rows = []
 
-    def update_round_status(self, index, status) -> None:
+    def update_round_status(self, index, status, match_status_summary: str = "") -> None:
         self.rows[index]["status"] = status
 
 

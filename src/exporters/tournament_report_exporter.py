@@ -154,16 +154,31 @@ class TournamentReportExporter:
         return [self._serialize_player(player) for player in players]
 
     def _serialize_tournament(self, tournament) -> dict:
+        tournament_players = list(getattr(tournament, "players", []))
         rounds = [self._serialize_round(round_) for round_ in getattr(tournament, "rounds", [])]
+        points_by_player = self._compute_total_points_by_player(getattr(tournament, "rounds", []))
+        status = str(getattr(tournament, "status", ""))
+        serialized_players = [
+            self._serialize_player(
+                player,
+                total_points=points_by_player.get(getattr(player, "national_chess_identifier", ""), 0.0),
+            )
+            for player in tournament_players
+        ]
         return {
             "name": str(getattr(tournament, "name", "")),
             "venue": str(getattr(tournament, "venue", "")),
             "start_date": self._format_date(getattr(tournament, "start_date", "")),
             "end_date": self._format_date(getattr(tournament, "end_date", "")),
             "number_of_rounds": int(getattr(tournament, "number_of_rounds", 0) or 0),
-            "status": str(getattr(tournament, "status", "")),
+            "status": status,
             "description": str(getattr(tournament, "description", "")),
-            "players": [self._serialize_player(player) for player in getattr(tournament, "players", [])],
+            "players": serialized_players,
+            "podium": self._build_podium(
+                players=tournament_players,
+                points_by_player=points_by_player,
+                status=status,
+            ),
             "rounds": rounds,
             "match_count": sum(len(round_data["matches"]) for round_data in rounds),
         }
@@ -191,20 +206,80 @@ class TournamentReportExporter:
         }
 
     @staticmethod
-    def _serialize_player(player) -> dict:
+    def _serialize_player(player, total_points: float | None = None) -> dict:
         if player is None:
             return {
                 "first_name": "",
                 "last_name": "",
                 "date_of_birth": "",
                 "national_chess_identifier": "",
+                "total_points": 0.0,
             }
-        return {
+        payload = {
             "first_name": str(getattr(player, "first_name", "")),
             "last_name": str(getattr(player, "last_name", "")),
             "date_of_birth": str(getattr(player, "date_of_birth", "")),
             "national_chess_identifier": str(getattr(player, "national_chess_identifier", "")),
         }
+        if total_points is not None:
+            payload["total_points"] = float(total_points)
+        return payload
+
+    def _compute_total_points_by_player(self, rounds) -> dict[str, float]:
+        totals: dict[str, float] = {}
+        for round_ in rounds:
+            for match in getattr(round_, "matches", []):
+                player_1 = getattr(getattr(match, "player1", None), "player", None)
+                player_2 = getattr(getattr(match, "player2", None), "player", None)
+                player_1_ncid = str(getattr(player_1, "national_chess_identifier", ""))
+                player_2_ncid = str(getattr(player_2, "national_chess_identifier", ""))
+                player_1_score = float(getattr(getattr(match, "player1", None), "score", 0.0))
+                player_2_score = float(getattr(getattr(match, "player2", None), "score", 0.0))
+                if player_1_ncid:
+                    totals[player_1_ncid] = totals.get(player_1_ncid, 0.0) + player_1_score
+                if player_2_ncid:
+                    totals[player_2_ncid] = totals.get(player_2_ncid, 0.0) + player_2_score
+        return totals
+
+    def _build_podium(
+        self,
+        *,
+        players,
+        points_by_player: dict[str, float],
+        status: str,
+    ) -> list[dict]:
+        if str(status).strip().lower() != "completed":
+            return []
+
+        ordered_players = sorted(
+            players,
+            key=lambda player: (
+                -float(points_by_player.get(getattr(player, "national_chess_identifier", ""), 0.0)),
+                str(getattr(player, "last_name", "")).lower(),
+                str(getattr(player, "first_name", "")).lower(),
+                str(getattr(player, "national_chess_identifier", "")).lower(),
+            ),
+        )
+
+        podium: list[dict] = []
+        for place in (1, 2, 3):
+            index = place - 1
+            if index >= len(ordered_players):
+                break
+            player = ordered_players[index]
+            ncid = str(getattr(player, "national_chess_identifier", ""))
+            points = float(points_by_player.get(ncid, 0.0))
+            first_name = str(getattr(player, "first_name", "")).strip()
+            last_name = str(getattr(player, "last_name", "")).strip()
+            display_name = f"{first_name} {last_name}".strip() or ncid
+            podium.append(
+                {
+                    "place": place,
+                    "name": display_name,
+                    "points": self._format_points(points),
+                }
+            )
+        return podium
 
     @staticmethod
     def _format_date(value) -> str:
@@ -216,3 +291,10 @@ class TournamentReportExporter:
     def _safe_fragment(value: str) -> str:
         safe = "".join(character if character.isalnum() else "_" for character in value).strip("_")
         return safe.lower() or "tournament"
+
+    @staticmethod
+    def _format_points(points: float) -> str:
+        points_value = float(points)
+        if points_value.is_integer():
+            return str(int(points_value))
+        return f"{points_value:.1f}"

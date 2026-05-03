@@ -1,4 +1,4 @@
-from src.controllers.pairings_genrator import PairingGenerator
+from src.controllers.pairings_generator import PairingGenerator
 from src.models.history import MatchHistory
 from src.models.players import Player
 
@@ -48,7 +48,7 @@ def test_generate_pairings_avoids_seen_rematch_when_possible(monkeypatch) -> Non
     )
 
     # Keep ordering deterministic for this test.
-    monkeypatch.setattr("src.controllers.pairings_genrator.shuffle", lambda values: None)
+    monkeypatch.setattr("src.controllers.pairings_generator.shuffle", lambda values: None)
 
     generator = PairingGenerator(players)
     pairings = generator.generate_pairings(number_of_round=2)

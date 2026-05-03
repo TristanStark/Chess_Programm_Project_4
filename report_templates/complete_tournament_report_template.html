@@ -280,8 +280,30 @@
       <div class="section-body">
         {% if tournaments %}
         <table>
-          <thead><tr><th>#</th><th>Name</th><th>Venue</th><th>Start date</th><th>End date</th><th>Rounds</th><th>Players</th></tr></thead>
-          <tbody>{% for tournament in tournaments %}<tr><td>{{ loop.index }}</td><td>{{ tournament.name }}</td><td>{{ tournament.venue }}</td><td>{{ tournament.start_date }}</td><td>{{ tournament.end_date }}</td><td>{{ tournament.number_of_rounds }}</td><td>{{ tournament.players|length }}</td></tr>{% endfor %}</tbody>
+          <thead><tr><th>#</th><th>Name</th><th>Venue</th><th>Start date</th><th>End date</th><th>Status</th><th>Rounds</th><th>Players</th><th>Podium</th></tr></thead>
+          <tbody>
+            {% for tournament in tournaments %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>{{ tournament.name }}</td>
+              <td>{{ tournament.venue }}</td>
+              <td>{{ tournament.start_date }}</td>
+              <td>{{ tournament.end_date }}</td>
+              <td>{{ tournament.status }}</td>
+              <td>{{ tournament.number_of_rounds }}</td>
+              <td>{{ tournament.players|length }}</td>
+              <td>
+                {% if tournament.podium %}
+                  {% for podium_entry in tournament.podium %}
+                    {{ podium_entry.place }}. {{ podium_entry.name }}{% if not loop.last %} | {% endif %}
+                  {% endfor %}
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
         </table>
         {% else %}<div class="empty">No tournaments available.</div>{% endif %}
       </div>

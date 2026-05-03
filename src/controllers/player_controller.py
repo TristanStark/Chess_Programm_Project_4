@@ -1,13 +1,13 @@
 from typing import Optional, Sequence
 
 from src.models.players import Player
-from src.views.player_info_card_view import PlayerInfoCard
+from src.controllers.view_contracts import PlayerInfoViewProtocol
 
 
 class PlayerController:
     """Controller responsible for binding a selected Player to PlayerInfoCard view."""
 
-    def __init__(self, player_view: PlayerInfoCard):
+    def __init__(self, player_view: PlayerInfoViewProtocol):
         self.player_view = player_view
         self._selected_player: Optional[Player] = None
 
